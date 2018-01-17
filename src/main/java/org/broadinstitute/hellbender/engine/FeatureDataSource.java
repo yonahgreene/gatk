@@ -233,7 +233,13 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
     public FeatureDataSource(final FeatureInput<T> featureInput, final int queryLookaheadBases, final Class<? extends Feature> targetFeatureType,
                              final int cloudPrefetchBuffer, final int cloudIndexPrefetchBuffer) {
         this(featureInput, queryLookaheadBases, targetFeatureType, cloudPrefetchBuffer, cloudIndexPrefetchBuffer,
-             null);
+             null, false);
+    }
+
+    public FeatureDataSource(final FeatureInput<T> featureInput, final int queryLookaheadBases, final Class<? extends Feature> targetFeatureType,
+                             final int cloudPrefetchBuffer, final int cloudIndexPrefetchBuffer, final Path reference) {
+        this(featureInput, queryLookaheadBases, targetFeatureType, cloudPrefetchBuffer, cloudIndexPrefetchBuffer,
+                reference, false);
     }
 
     /**
@@ -249,7 +255,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
      * @param reference Path to a reference. May be null. Needed only for reading from GenomicsDB.
      */
     public FeatureDataSource(final FeatureInput<T> featureInput, final int queryLookaheadBases, final Class<? extends Feature> targetFeatureType,
-                             final int cloudPrefetchBuffer, final int cloudIndexPrefetchBuffer, final Path reference) {
+                             final int cloudPrefetchBuffer, final int cloudIndexPrefetchBuffer, final Path reference, final boolean doGnarlyGenotyping) {
         Utils.validateArg( queryLookaheadBases >= 0, "Query lookahead bases must be >= 0");
         this.featureInput = Utils.nonNull(featureInput, "featureInput must not be null");
 
@@ -258,7 +264,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
 
         // Create a feature reader without requiring an index.  We will require one ourselves as soon as
         // a query by interval is attempted.
-        this.featureReader = getFeatureReader(featureInput, targetFeatureType, cloudWrapper, cloudIndexWrapper, reference);
+        this.featureReader = getFeatureReader(featureInput, targetFeatureType, cloudWrapper, cloudIndexWrapper, reference, doGnarlyGenotyping);
 
         if (isGenomicsDBPath(featureInput.getFeaturePath())) {
             //genomics db uri's have no associated index file to read from, but they do support random access
@@ -294,7 +300,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
     private static <T extends Feature> FeatureReader<T> getFeatureReader(final FeatureInput<T> featureInput, final Class<? extends Feature> targetFeatureType,
                                                                          final Function<SeekableByteChannel, SeekableByteChannel> cloudWrapper,
                                                                          final Function<SeekableByteChannel, SeekableByteChannel> cloudIndexWrapper,
-                                                                         final Path reference) {
+                                                                         final Path reference, final boolean callGenotypes) {
         if (isGenomicsDBPath(featureInput.getFeaturePath())) {
             try {
                 if (reference == null) {
@@ -302,7 +308,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
                 }
                 try {
                     final File referenceAsFile = reference.toFile();
-                    return (FeatureReader<T>)getGenomicsDBFeatureReader(featureInput.getFeaturePath(), referenceAsFile);
+                    return (FeatureReader<T>)getGenomicsDBFeatureReader(featureInput.getFeaturePath(), referenceAsFile, callGenotypes);
                 } catch (final UnsupportedOperationException e){
                     throw new UserException.BadInput("GenomicsDB requires that the reference be a local file.", e);
                 }
@@ -364,7 +370,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
         }
     }
 
-    private static FeatureReader<VariantContext> getGenomicsDBFeatureReader(final String path, final File reference) {
+    private static FeatureReader<VariantContext> getGenomicsDBFeatureReader(final String path, final File reference, final boolean callGenotypes) {
         if( !isGenomicsDBPath(path) ) {
             throw new IllegalArgumentException("Trying to create a GenomicsDBReader from a non-GenomicsDB input");
         }
@@ -390,8 +396,15 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
                     GenomicsDBConstants.DEFAULT_VCFHEADER_FILE_NAME + ") could not be read from GenomicsDB workspace " + workspace.getAbsolutePath(), e);
         }
 
-        final GenomicsDBExportConfiguration.ExportConfiguration exportConfigurationBuilder =
-                createExportConfiguration(reference, workspace, callsetJson, vidmapJson, vcfHeader);
+        final GenomicsDBExportConfiguration.ExportConfiguration exportConfigurationBuilder;
+        if (callGenotypes) {
+            exportConfigurationBuilder =
+                    createExportConfiguration(reference, workspace, callsetJson, vidmapJson, vcfHeader, true);
+        }
+        else {
+            exportConfigurationBuilder =
+                    createExportConfiguration(reference, workspace, callsetJson, vidmapJson, vcfHeader);
+        }
 
         try {
             return new GenomicsDBFeatureReader<>(exportConfigurationBuilder, new BCF2Codec(), Optional.empty());
@@ -402,7 +415,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
 
     private static GenomicsDBExportConfiguration.ExportConfiguration createExportConfiguration(final File reference, final File workspace,
                                                                                                final File callsetJson, final File vidmapJson,
-                                                                                               final File vcfHeader) {
+                                                                                               final File vcfHeader, final boolean doGnarlyGenotyping) {
         GenomicsDBExportConfiguration.ExportConfiguration.Builder exportConfigurationBuilder =
                 GenomicsDBExportConfiguration.ExportConfiguration.newBuilder()
                         .setWorkspace(workspace.getAbsolutePath())
@@ -414,6 +427,11 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
                         .setProduceGTWithMinPLValueForSpanningDeletions(false)
                         .setSitesOnlyQuery(false)
                         .setMaxDiploidAltAllelesThatCanBeGenotyped(GenotypeLikelihoods.MAX_DIPLOID_ALT_ALLELES_THAT_CAN_BE_GENOTYPED);
+
+        if (doGnarlyGenotyping) {
+            exportConfigurationBuilder.setProduceGTField(true).setMaxDiploidAltAllelesThatCanBeGenotyped(6);
+        }
+
         Path arrayFolder = Paths.get(workspace.getAbsolutePath(), GenomicsDBConstants.DEFAULT_ARRAY_NAME).toAbsolutePath();
 
         // For the multi-interval support, we create multiple arrays (directories) in a single workspace -
@@ -436,6 +454,12 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
         }
 
         return exportConfigurationBuilder.build();
+    }
+
+    private static GenomicsDBExportConfiguration.ExportConfiguration createExportConfiguration(final File reference, final File workspace,
+                                                                                               final File callsetJson, final File vidmapJson,
+                                                                                               final File vcfHeader) {
+        return createExportConfiguration(reference, workspace, callsetJson, vidmapJson, vcfHeader, false);
     }
 
     /**

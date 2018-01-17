@@ -41,6 +41,8 @@ import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
+import static org.broadinstitute.hellbender.utils.test.VariantContextTestUtils.getVariantContexts;
+
 public class GenotypeGVCFsIntegrationTest extends CommandLineProgramTest {
 
     private static final List<String> NO_EXTRA_ARGS = Collections.emptyList();
@@ -227,20 +229,6 @@ public class GenotypeGVCFsIntegrationTest extends CommandLineProgramTest {
         final List<VariantContext> expectedVC = getVariantContexts(expected);
         final List<VariantContext> actualVC = getVariantContexts(output);
         assertForEachElementInLists(actualVC, expectedVC, assertion);
-    }
-
-    /**
-     * Returns a list of VariantContext records from a VCF file
-     *
-     * @param vcfFile VCF file
-     * @return list of VariantContext records
-     * @throws IOException if the file does not exist or can not be opened
-     */
-    @SuppressWarnings({"unchecked"})
-    private static List<VariantContext> getVariantContexts(final File vcfFile) throws IOException {
-        try(final FeatureDataSource<VariantContext> variantContextFeatureDataSource = new FeatureDataSource<>(vcfFile)) {
-            return IteratorUtils.toList(variantContextFeatureDataSource.iterator());
-        }
     }
 
     @Test

@@ -5,10 +5,9 @@ import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFConstants;
-import com.google.common.collect.BiMap;
-import com.google.common.collect.HashBiMap;
 import htsjdk.variant.variantcontext.*;
 import htsjdk.variant.vcf.*;
+import org.apache.commons.collections.IteratorUtils;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.output.NullOutputStream;
 import org.apache.commons.lang3.tuple.Pair;
@@ -20,16 +19,14 @@ import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.tools.walkers.annotator.Annotation;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.AlleleSubsettingUtils;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.GenotypeAssignmentMethod;
-import org.broadinstitute.hellbender.utils.MathUtils;
 import org.broadinstitute.hellbender.utils.Utils;
-import org.broadinstitute.hellbender.utils.collections.Permutation;
-import org.broadinstitute.hellbender.utils.genotyper.IndexedAlleleList;
 import org.broadinstitute.hellbender.utils.variant.GATKVCFConstants;
 import org.broadinstitute.hellbender.utils.variant.GATKVCFHeaderLines;
 import org.testng.Assert;
 
 import java.io.File;
 import java.io.PrintStream;
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -482,6 +479,47 @@ public final class VariantContextTestUtils {
             VariantContext expectedReordered = sortAlleles(expected, header);
             assertVariantContextsAreEqual(actualReordered, expectedReordered, attributesToIgnore);
         }
+    }
+
+    /**
+     * Returns a list of VariantContext records from a VCF file
+     *
+     * @param vcfFile VCF file
+     * @return list of VariantContext records
+     * @throws IOException if the file does not exist or can not be opened
+     */
+    @SuppressWarnings({"unchecked"})
+    public static List<VariantContext> getVariantContexts(final File vcfFile) throws IOException {
+        try (final FeatureDataSource<VariantContext> variantContextFeatureDataSource = new FeatureDataSource<>(vcfFile)) {
+            return IteratorUtils.toList(variantContextFeatureDataSource.iterator());
+        }
+    }
+
+    public static Genotype makeGwithPLs(final String sample, final Allele a1, final Allele a2, final double[] pls) {
+        final Genotype gt = new GenotypeBuilder(sample, Arrays.asList(a1, a2)).PL(pls).make();
+        if ( pls != null && pls.length > 0 ) {
+            Assert.assertNotNull(gt.getPL());
+            Assert.assertTrue(gt.getPL().length > 0);
+            for ( final int i : gt.getPL() ) {
+                Assert.assertTrue(i >= 0);
+            }
+            Assert.assertNotEquals(Arrays.toString(gt.getPL()),"[0]");
+        }
+        return gt;
+    }
+
+    public static Genotype makeG(final String sample, final Allele a1, final Allele a2) {
+        return GenotypeBuilder.create(sample, Arrays.asList(a1, a2));
+    }
+
+    public static Genotype makeG(final String sample, final Allele a1, final Allele a2, final int... pls) {
+        return new GenotypeBuilder(sample, Arrays.asList(a1, a2)).PL(pls).make();
+    }
+
+    public static VariantContext makeVC(final String source, final List<Allele> alleles, final Genotype... genotypes) {
+        final int start = 10;
+        final int stop = start; // does the stop actually get validated???  If it does then `new VariantContextBuilder().computeEndFromAlleles(alleles)...`
+        return new VariantContextBuilder(source, "1", start, stop, alleles).genotypes(Arrays.asList(genotypes)).filters((String)null).make();
     }
 
     /**

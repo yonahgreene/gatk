@@ -583,7 +583,6 @@ public final class GenomicsDBImport extends GATKTool {
     private SortedMap<String, FeatureReader<VariantContext>> getFeatureReadersInParallel(
             final SortedMap<String, Path> sampleNametoPath, final int batchSize, final int lowerSampleIndex) {
         final SortedMap<String, FeatureReader<VariantContext>> sampleToReaderMap = new TreeMap<>();
-        logger.info("Starting batch input file preload");
         final Map<String, Future<FeatureReader<VariantContext>>> futures = new LinkedHashMap<>();
         final List<String> sampleNames = new ArrayList<>(sampleNametoPath.keySet());
         for(int i = lowerSampleIndex; i < sampleNametoPath.size() && i < lowerSampleIndex+batchSize; ++i) {
