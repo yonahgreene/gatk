@@ -457,7 +457,7 @@ public abstract class CommandLineProgram implements CommandLinePluginProvider {
     /**
      * @return this programs CommandLineParser.  If one is not initialized yet this will initialize it.
      */
-    protected final CommandLineParser getCommandLineParser() {
+    public final CommandLineParser getCommandLineParser() {
         if( commandLineParser == null) {
             commandLineParser = new CommandLineArgumentParser(this, getPluginDescriptors(), Collections.emptySet());
         }
