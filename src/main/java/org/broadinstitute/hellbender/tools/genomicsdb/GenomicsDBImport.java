@@ -6,6 +6,7 @@ import com.intel.genomicsdb.importer.model.ChromosomeInterval;
 import com.intel.genomicsdb.model.Coordinates;
 import com.intel.genomicsdb.model.GenomicsDBCallsetsMapProto;
 import com.intel.genomicsdb.model.GenomicsDBImportConfiguration;
+import com.intel.genomicsdb.GenomicsDBUtils;
 import com.intel.genomicsdb.model.ImportConfig;
 import com.intel.genomicsdb.model.BatchCompletionCallbackFunctionArgument;
 import htsjdk.samtools.SAMSequenceDictionary;
@@ -657,7 +658,7 @@ public final class GenomicsDBImport extends GATKTool {
         }
 
         if (!workspaceDir.exists()) {
-            final int ret = GenomicsDBImporter.createTileDBWorkspace(workspaceDir.getAbsolutePath());
+            final int ret = GenomicsDBUtils.createTileDBWorkspace(workspaceDir.getAbsolutePath(), false);
             if (ret > 0) {
                 checkIfValidWorkspace(workspaceDir);
                 logger.info("Importing data to GenomicsDB workspace: " + workspaceDir);
