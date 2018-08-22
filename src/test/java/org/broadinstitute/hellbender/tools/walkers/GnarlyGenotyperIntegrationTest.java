@@ -90,12 +90,14 @@ public class GnarlyGenotyperIntegrationTest extends CommandLineProgramTest {
         final File tempGenomicsDB = GenomicsDBTestUtils.createTempGenomicsDB(Arrays.asList(inputs), new SimpleInterval(interval));
         final String genomicsDBUri = GenomicsDBTestUtils.makeGenomicsDBUri(tempGenomicsDB);
 
+        /*
         //copy in the extra files until Protobuf update in PR #4645 is ready
         Runtime.getRuntime().exec("cp " + getTestFile("vidmap.updated.json").getAbsolutePath() +" "+ tempGenomicsDB.getAbsolutePath() + "/vidmap.json");
         getQueryJsonForGenomicsDB(new File(tempGenomicsDB, GenomicsDBConstants.DEFAULT_VIDMAP_FILE_NAME).getAbsolutePath(),
                 new File(tempGenomicsDB, GenomicsDBConstants.DEFAULT_CALLSETMAP_FILE_NAME).getAbsolutePath(),
                 tempGenomicsDB.getAbsolutePath(),
                 reference);
+                */
 
         File output = runTool(genomicsDBUri, interval, reference, additionalArguments);
 

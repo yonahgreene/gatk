@@ -81,7 +81,7 @@ public final class GnarlyGenotyper extends VariantWalker {
     private static final String GVCF_BLOCK = "GVCFBlock";
     private final RMSMappingQuality MQcalculator = RMSMappingQuality.getInstance();
 
-    private static final int PIPELINE_MAX_ALT_COUNT = 6;
+    public static final int PIPELINE_MAX_ALT_COUNT = 6;
     private static final int ASSUMED_PLOIDY = GATKVariantContextUtils.DEFAULT_PLOIDY;
     // cache the ploidy 2 PL array sizes for increasing numbers of alts up to the maximum of PIPELINE_MAX_ALT_COUNT
     private final int[] likelihoodSizeCache = new int[PIPELINE_MAX_ALT_COUNT + 1];

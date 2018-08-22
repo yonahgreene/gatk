@@ -13,6 +13,7 @@ import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.IndexFeatureFile;
 import org.broadinstitute.hellbender.tools.genomicsdb.GenomicsDBConstants;
+import org.broadinstitute.hellbender.tools.walkers.GnarlyGenotyper;
 import org.broadinstitute.hellbender.utils.IndexUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
@@ -436,7 +437,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
                         .setMaxDiploidAltAllelesThatCanBeGenotyped(GenotypeLikelihoods.MAX_DIPLOID_ALT_ALLELES_THAT_CAN_BE_GENOTYPED);
 
         if (doGnarlyGenotyping) {
-            exportConfigurationBuilder.setProduceGTField(true).setMaxDiploidAltAllelesThatCanBeGenotyped(6);
+            exportConfigurationBuilder.setProduceGTField(true).setMaxDiploidAltAllelesThatCanBeGenotyped(GnarlyGenotyper.PIPELINE_MAX_ALT_COUNT);
         }
 
         Path arrayFolder = Paths.get(workspace.getAbsolutePath(), GenomicsDBConstants.DEFAULT_ARRAY_NAME).toAbsolutePath();
@@ -460,8 +461,7 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
             exportConfigurationBuilder.setGenerateArrayNameFromPartitionBounds(true);
         }
 
-        //Sample code snippet to show how combine operations for INFO fields can be specified using the Protobuf
-        //API
+        //Modify combine operations for INFO fields using the Protobuf API
         //
         //References
         //GenomicsDB Protobuf structs: https://github.com/Intel-HLS/GenomicsDB/blob/master/src/resources/genomicsdb_vid_mapping.proto
@@ -485,9 +485,11 @@ public final class FeatureDataSource<T extends Feature> implements GATKDataSourc
         HashMap<String, Integer> fieldNameToIndexInVidFieldsList =
             getFieldNameToListIndexInProtobufVidMappingObject(vidMapPB);
 
-        //Example: set MQ combine operation to median (default is also median, but this is just an example)
-        vidMapPB = updateINFOFieldCombineOperation(vidMapPB, fieldNameToIndexInVidFieldsList,
-                "MQ", "median");
+        //Update combine operations for GnarlyGenotyper
+        vidMapPB = updateINFOFieldCombineOperation(vidMapPB, fieldNameToIndexInVidFieldsList, "MQ_DP", "sum");
+        vidMapPB = updateINFOFieldCombineOperation(vidMapPB, fieldNameToIndexInVidFieldsList, "QUALapprox", "sum");
+        vidMapPB = updateINFOFieldCombineOperation(vidMapPB, fieldNameToIndexInVidFieldsList, "VarDP", "sum");
+
         if(vidMapPB != null) {
             //Use rebuilt vidMap in exportConfiguration
             //NOTE: this does NOT update the JSON file, the vidMapPB is a temporary structure that's passed to
