@@ -3,10 +3,12 @@ package org.broadinstitute.hellbender.tools.walkers.variantutils;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.tribble.TribbleException;
 import htsjdk.variant.variantcontext.Allele;
+import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFConstants;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.bdgenomics.formats.avro.Variant;
 import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.ArgumentCollection;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
@@ -130,7 +132,13 @@ public final class ValidateVariants extends VariantWalker {
          * Check that the AN and AC annotations are consistent with the number of calls, alleles and then number these
          * are called across samples.
          */
-        CHR_COUNTS;
+        CHR_COUNTS,
+
+        /**
+         * Check that each genotype has a GT and AD and (for sites with no more than 6 alt alleles) PLs and GQ
+         */
+        GNARLY;
+        ;
 
         /**
          * Unmodifiable set of concrete validation types.
@@ -196,6 +204,12 @@ public final class ValidateVariants extends VariantWalker {
 
     // information to keep track of when validating a GVCF
     private SimpleInterval previousInterval;
+
+    @Argument(fullName = "max-alt-alleles",
+            shortName = "max-alt-alleles",
+            doc = "Maximum number of alt alleles for which PLs should be reported; used in GNARLY validation mode",
+            optional = true)
+    int MAX_ALT_ALLELES = 5;
 
     @Override
     public void onTraversalStart() {
@@ -352,6 +366,48 @@ public final class ValidateVariants extends VariantWalker {
             case CHR_COUNTS:
                 vc.validateChromosomeCounts();
                 break;
+            case GNARLY:
+                validateGnarlyGenotypes(vc);
+                break;
+        }
+    }
+
+    private void validateGnarlyGenotypes(final VariantContext vc) {
+        final int nObservedAlts = vc.getNAlleles() - 1;
+        final boolean shouldHavePLs = nObservedAlts <= MAX_ALT_ALLELES;
+        for (final Genotype g : vc.getGenotypes()) {
+            if (g.isNoCall()) {
+                break;
+            }
+            if (!g.isHomRef()) {
+                validateRequiredGTAttributes(g, vc);
+            }
+            if (shouldHavePLs) {
+                validateAdditionalGTAttributes(g, vc);
+            }
+        }
+    }
+
+    /**
+     * I should rename this.  AD isn't required for homRefs.  :-P
+     * @param g
+     * @param vc
+     */
+    private void validateRequiredGTAttributes(final Genotype g, final VariantContext vc) {
+        if (!g.hasAD()) {
+            final UserException e = new UserException.BadInput("Genotype for sample " + g.getSampleName() + " is missing AD at " + vc.getContig() + ":" + vc.getStart() + " : " + g);
+            throwOrWarn(e);
+        }
+    }
+
+    private void validateAdditionalGTAttributes(final Genotype g, final VariantContext vc) {
+        if (!g.hasPL()) {
+            final UserException e = new UserException.BadInput("Genotype for sample " + g.getSampleName() + " is missing PL at " + vc.getContig() + ":" + vc.getStart() + " : " + g);
+            throwOrWarn(e);
+        }
+        if (!g.hasGQ()) {
+            final UserException e = new UserException.BadInput("Genotype for sample " + g.getSampleName() + " is missing GQ at " + vc.getContig() + ":" + vc.getStart() + " : " + g);
+            throwOrWarn(e);
         }
     }
 
