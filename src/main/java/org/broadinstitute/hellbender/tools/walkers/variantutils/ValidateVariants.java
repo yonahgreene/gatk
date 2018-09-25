@@ -367,9 +367,14 @@ public final class ValidateVariants extends VariantWalker {
                 vc.validateChromosomeCounts();
                 break;
             case GNARLY:
+                validateGnarlyAnnotations(vc);
                 validateGnarlyGenotypes(vc);
                 break;
         }
+    }
+
+    private void validateGnarlyAnnotations(final VariantContext vc) {
+
     }
 
     private void validateGnarlyGenotypes(final VariantContext vc) {
