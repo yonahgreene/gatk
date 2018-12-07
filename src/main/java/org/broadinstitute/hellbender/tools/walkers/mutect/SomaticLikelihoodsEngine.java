@@ -1,6 +1,9 @@
 package org.broadinstitute.hellbender.tools.walkers.mutect;
 
 import com.google.common.annotations.VisibleForTesting;
+import htsjdk.variant.variantcontext.Allele;
+import org.apache.commons.math3.linear.Array2DRowRealMatrix;
+import org.apache.commons.math3.linear.DefaultRealMatrixChangingVisitor;
 import org.apache.commons.math3.linear.RealMatrix;
 import org.apache.commons.math3.special.Gamma;
 import org.apache.commons.math3.util.MathArrays;
@@ -8,8 +11,11 @@ import org.broadinstitute.hellbender.utils.Dirichlet;
 import org.broadinstitute.hellbender.utils.IndexRange;
 import org.broadinstitute.hellbender.utils.MathUtils;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.genotyper.LikelihoodMatrix;
 
-import java.util.Arrays;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Created by David Benjamin on 3/9/17.
@@ -95,6 +101,10 @@ public class SomaticLikelihoodsEngine {
         return log10Evidence(log10Likelihoods, flatPrior);
     }
 
+    public static <A extends Allele> double log10Evidence(final LikelihoodMatrix<A> log10Matrix) {
+        return log10Matrix.numberOfReads() == 0 ? 0 : log10Evidence(getAsRealMatrix(log10Matrix));
+    }
+
     private static double xLog10x(final double x) {
         return x < 1e-8 ? 0 : x * Math.log10(x);
     }
@@ -105,4 +115,55 @@ public class SomaticLikelihoodsEngine {
         return MathUtils.logToLog10(logNumerator - logDenominator);
     }
 
+    // compute the likelihoods that each allele is contained at some allele fraction in the sample
+    public static <A extends Allele> PerAlleleCollection<Double> somaticLog10Odds(final LikelihoodMatrix<A> log10Matrix) {
+        final double log10EvidenceWithAllAlleles = log10Matrix.numberOfReads() == 0 ? 0 :
+                log10Evidence(getAsRealMatrix(log10Matrix));
+
+        final PerAlleleCollection<Double> lods = new PerAlleleCollection<>(PerAlleleCollection.Type.ALT_ONLY);
+        final int refIndex = SomaticGenotypingEngine.getRefIndex(log10Matrix);
+        IntStream.range(0, log10Matrix.numberOfAlleles()).filter(a -> a != refIndex).forEach(a -> {
+            final Allele allele = log10Matrix.getAllele(a);
+            final LikelihoodMatrix<A> log10MatrixWithoutThisAllele = SubsettedLikelihoodMatrix.excludingAllele(log10Matrix, allele);
+            final double log10EvidenceWithoutThisAllele = log10MatrixWithoutThisAllele.numberOfReads() == 0 ? 0 :
+                    log10Evidence(getAsRealMatrix(log10MatrixWithoutThisAllele));
+            lods.setAlt(allele, log10EvidenceWithAllAlleles - log10EvidenceWithoutThisAllele);
+        });
+        return lods;
+    }
+
+    public  static <A extends Allele> Set<A> allelesToKeep(final LikelihoodMatrix<A> log10Matrix, final double log10DifferenceThreshold, final int minAllelesToKeep) {
+        final Set<A> allelesToKeep = new HashSet<>(log10Matrix.alleles());
+        // we try to drop each allele cumulatively, starting with the least likely
+        // we get the order of alleles to attempt to drop from the leave-one-out log odds
+        final PerAlleleCollection<Double> leaveOneOutLods = somaticLog10Odds(log10Matrix);
+        final List<A> orderOfAllelesToTest = log10Matrix.alleles().stream().filter(Allele::isNonReference)
+                .sorted(Comparator.comparingDouble(leaveOneOutLods::get)).collect(Collectors.toList());
+        double log10Evidence = log10Evidence(log10Matrix);
+        for (final A allele : orderOfAllelesToTest) {
+            if (allelesToKeep.size() <= minAllelesToKeep) {
+                continue;
+            }
+            final List<A> allelesWithoutThisOne = allelesToKeep.stream().filter(a -> a != allele).collect(Collectors.toList());
+            final LikelihoodMatrix<A> log10MatrixWithoutThisAllele = new SubsettedLikelihoodMatrix<A>(log10Matrix, allelesWithoutThisOne);
+            final double log10EvidenceWithoutAllele = log10Evidence(log10MatrixWithoutThisAllele);
+            if (log10Evidence - log10EvidenceWithoutAllele < log10DifferenceThreshold) {
+                allelesToKeep.remove(allele);
+                log10Evidence = log10EvidenceWithoutAllele;
+            }
+        }
+        return allelesToKeep;
+    }
+
+    //convert a likelihood matrix of alleles x reads into a RealMatrix
+    public static <A extends Allele> RealMatrix getAsRealMatrix(final LikelihoodMatrix<A> matrix) {
+        final RealMatrix result = new Array2DRowRealMatrix(matrix.numberOfAlleles(), matrix.numberOfReads());
+        result.walkInOptimizedOrder(new DefaultRealMatrixChangingVisitor() {
+            @Override
+            public double visit(int row, int column, double value) {
+                return matrix.get(row, column);
+            }
+        });
+        return result;
+    }
 }

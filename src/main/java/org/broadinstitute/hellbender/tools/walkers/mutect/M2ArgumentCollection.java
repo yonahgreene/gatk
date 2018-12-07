@@ -41,6 +41,9 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
     public static final String MEDIAN_AUTOSOMAL_COVERAGE_LONG_NAME = "median-autosomal-coverage";
     public static final String MITOCHONDIRA_MODE_LONG_NAME = "mitochondria-mode";
 
+    public static final String HAPLOTYPE_LOD_LONG_NAME = "haplotype-lod";
+    public static final String MIN_NUMBER_OF_HAPLOTYPES_LONG_NAME = "min-haplotypes";
+
     public static final double DEFAULT_AF_FOR_TUMOR_ONLY_CALLING = 5e-8;
     public static final double DEFAULT_AF_FOR_TUMOR_NORMAL_CALLING = 1e-6;
     public static final double DEFAULT_AF_FOR_MITO_CALLING = 4e-3;
@@ -48,6 +51,8 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
     public static final double DEFAULT_MITO_EMISSION_LOD = 0;
     public static final double DEFAULT_INITIAL_LOD = 2.0;
     public static final double DEFAULT_MITO_INITIAL_LOD = 0;
+    public static final int DEFAULT_MIN_HAPLOTYPE_COUNT = 2;
+    public static final int DEFAULT_HAPLOTYPE_LOD_THRESHOLD = 0;
 
     @Override
     protected boolean useMutectAssemblerArgumentCollection() { return true; }
@@ -176,6 +181,18 @@ public class M2ArgumentCollection extends AssemblyBasedCallerArgumentCollection 
 
     @Argument(fullName = ARTIFACT_PRIOR_TABLE_NAME, optional = true, doc = "table of prior artifact probabilities for the read orientation filter model")
     public File artifactPriorTable = null;
+
+    /**
+     * LOD threshold for removing unlikely haplotypes before genotyping
+     */
+    @Argument(fullName = HAPLOTYPE_LOD_LONG_NAME, optional = true, doc = "LOD threshold for removing unlikely haplotypes before genotyping")
+    public double haplotypeLodThreshold = DEFAULT_HAPLOTYPE_LOD_THRESHOLD;
+
+    /**
+     * Minimum number of haplotypes to keep for genotyping regardless of LOD
+     */
+    @Argument(fullName = MIN_NUMBER_OF_HAPLOTYPES_LONG_NAME, optional = true, doc = "Minimum number of haplotypes to keep for genotyping regardless of LOD")
+    public int minHaplotypeCount = DEFAULT_MIN_HAPLOTYPE_COUNT;
 
     /**
      * Two or more phased substitutions separated by this distance or less are merged into MNPs.
