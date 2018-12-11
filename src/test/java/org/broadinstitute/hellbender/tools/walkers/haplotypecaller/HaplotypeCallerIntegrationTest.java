@@ -434,6 +434,11 @@ public class HaplotypeCallerIntegrationTest extends CommandLineProgramTest {
         innerTestBamoutProducesReasonablySizedOutput(bamOutput);
     }
 
+    @Test
+    public void testLocalBamout() {
+        innerTestBamoutProducesReasonablySizedOutput(new File("/tmp/local-bamout.bam").toPath());
+    }
+
     private void innerTestBamoutProducesReasonablySizedOutput(Path bamOutput) {
         Utils.resetRandomGenerator();
 
@@ -456,6 +461,7 @@ public class HaplotypeCallerIntegrationTest extends CommandLineProgramTest {
         argBuilder.addArgument("L", testInterval);
         argBuilder.addArgument(AssemblyBasedCallerArgumentCollection.BAM_OUTPUT_SHORT_NAME, bamOutput.toUri().toString());
         argBuilder.addArgument("pairHMM", "AVX_LOGLESS_CACHING");
+        argBuilder.addArgument(AssemblyBasedCallerArgumentCollection.ALLELE_EXTENSION_LONG_NAME,2);
 
         runCommandLine(argBuilder.getArgsArray());
 

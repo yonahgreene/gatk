@@ -40,7 +40,12 @@ public final class BaseQualityRankSumTest extends RankSumTest implements Standar
 
     public static OptionalDouble getReadBaseQuality(final GATKRead read, final int refLoc) {
         Utils.nonNull(read);
-        return OptionalDouble.of(read.getBaseQuality(ReadUtils.getReadCoordinateForReferenceCoordinateUpToEndOfRead(read, refLoc, ReadUtils.ClippingTail.RIGHT_TAIL)));
+        final int baseOffset = ReadUtils.getReadCoordinateForReferenceCoordinateUpToEndOfRead(read, refLoc, ReadUtils.ClippingTail.RIGHT_TAIL);
+        if (baseOffset < 0 || baseOffset >= read.getLength()) {
+            return OptionalDouble.empty();
+        } else {
+            return OptionalDouble.of(read.getBaseQuality(baseOffset));
+        }
     }
 
     @Override

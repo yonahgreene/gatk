@@ -2,9 +2,11 @@ package org.broadinstitute.hellbender.tools.walkers.haplotypecaller;
 
 import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.SAMFileHeader;
+import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.variant.variantcontext.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.bdgenomics.adam.models.SequenceDictionary;
 import org.broadinstitute.hellbender.engine.FeatureContext;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
 import org.broadinstitute.hellbender.engine.ReferenceDataSource;
@@ -32,7 +34,6 @@ import java.util.stream.Collectors;
  */
 public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCallerArgumentCollection> {
 
-    public static final int ALLELE_EXTENSION = 2;
     private static final Logger logger = LogManager.getLogger(HaplotypeCallerGenotypingEngine.class);
 
 
@@ -180,7 +181,10 @@ public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCa
 
             mergedVC = removeAltAllelesIfTooManyGenotypes(ploidy, alleleMapper, mergedVC);
 
-            ReadLikelihoods<Allele> readAlleleLikelihoods = readLikelihoods.marginalize(alleleMapper, new SimpleInterval(mergedVC).expandWithinContig(ALLELE_EXTENSION, header.getSequenceDictionary()));
+            ReadLikelihoods<Allele> readAlleleLikelihoods = readLikelihoods.marginalize(alleleMapper);
+            final SAMSequenceDictionary sequenceDictionary = header.getSequenceDictionary();
+            final SimpleInterval relevantReadsLoc = new SimpleInterval(mergedVC).expandWithinContig(hcArgs.informativeReadOverlapRadius, sequenceDictionary);
+            readAlleleLikelihoods.filterToOnlyOverlappingReads(relevantReadsLoc);
             if (configuration.isSampleContaminationPresent()) {
                 readAlleleLikelihoods.contaminationDownsampling(configuration.getSampleContamination());
             }
@@ -195,7 +199,7 @@ public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCa
             if( call != null ) {
 
                 readAlleleLikelihoods = prepareReadAlleleLikelihoodsForAnnotation(readLikelihoods, perSampleFilteredReadList,
-                        emitReferenceConfidence, alleleMapper, readAlleleLikelihoods, call);
+                        emitReferenceConfidence, alleleMapper, readAlleleLikelihoods, call, relevantReadsLoc, sequenceDictionary);
 
                 final VariantContext annotatedCall = makeAnnotatedCall(ref, refLoc, tracker, header, mergedVC, readAlleleLikelihoods, call);
                 returnCalls.add( annotatedCall );
@@ -367,8 +371,9 @@ public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCa
 
     protected VariantContext makeAnnotatedCall(byte[] ref, SimpleInterval refLoc, FeatureContext tracker, SAMFileHeader header, VariantContext mergedVC, ReadLikelihoods<Allele> readAlleleLikelihoods, VariantContext call) {
         final SimpleInterval locus = new SimpleInterval(mergedVC.getContig(), mergedVC.getStart(), mergedVC.getEnd());
+        final SAMSequenceDictionary sequenceDictionary = header.getSequenceDictionary();
         final SimpleInterval refLocInterval= new SimpleInterval(refLoc);
-        final ReferenceDataSource refData = new ReferenceMemorySource(new ReferenceBases(ref, refLocInterval), header.getSequenceDictionary());
+        final ReferenceDataSource refData = new ReferenceMemorySource(new ReferenceBases(ref, refLocInterval), sequenceDictionary);
         final ReferenceContext referenceContext = new ReferenceContext(refData, locus, refLocInterval);
 
         final VariantContext untrimmedResult =  annotationEngine.annotateContext(call, tracker, referenceContext, readAlleleLikelihoods, a -> true);
@@ -455,19 +460,20 @@ public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCa
             final boolean emitReferenceConfidence,
             final Map<Allele, List<Haplotype>> alleleMapper,
             final ReadLikelihoods<Allele> readAlleleLikelihoodsForGenotyping,
-            final VariantContext call) {
+            final VariantContext call,
+            final SimpleInterval relevantReadsOverlap,
+            final SAMSequenceDictionary sequenceDictionary) {
 
         final ReadLikelihoods<Allele> readAlleleLikelihoodsForAnnotations;
-        final SimpleInterval loc = new SimpleInterval(call);
 
         // We can reuse for annotation the likelihood for genotyping as long as there is no contamination filtering
         // or the user want to use the contamination filtered set for annotations.
         // Otherwise (else part) we need to do it again.
         if (hcArgs.useFilteredReadMapForAnnotations || !configuration.isSampleContaminationPresent()) {
             readAlleleLikelihoodsForAnnotations = readAlleleLikelihoodsForGenotyping;
-            readAlleleLikelihoodsForAnnotations.filterToOnlyOverlappingReads(loc);
         } else {
-            readAlleleLikelihoodsForAnnotations = readHaplotypeLikelihoods.marginalize(alleleMapper, loc);
+            readAlleleLikelihoodsForAnnotations = readHaplotypeLikelihoods.marginalize(alleleMapper);
+            readAlleleLikelihoodsForAnnotations.filterToOnlyOverlappingReads(relevantReadsOverlap);
             if (emitReferenceConfidence) {
                 readAlleleLikelihoodsForAnnotations.addNonReferenceAllele(Allele.NON_REF_ALLELE);
             }
@@ -479,7 +485,7 @@ public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCa
 
         // Skim the filtered map based on the location so that we do not add filtered read that are going to be removed
         // right after a few lines of code below.
-        final Map<String, List<GATKRead>> overlappingFilteredReads = overlappingFilteredReads(perSampleFilteredReadList, loc);
+        final Map<String, List<GATKRead>> overlappingFilteredReads = overlappingFilteredReads(perSampleFilteredReadList, relevantReadsOverlap);
 
         readAlleleLikelihoodsForAnnotations.addReads(overlappingFilteredReads,0);
 

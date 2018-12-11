@@ -676,7 +676,7 @@ public final class ReadUtils {
 
     public static int getReadCoordinateForReferenceCoordinateUpToEndOfRead(final GATKRead read, final int refCoord, final ClippingTail tail) {
         final int leftmostSafeVariantPosition = Math.max(read.getSoftStart(), refCoord);
-        return getReadCoordinateForReferenceCoordinate(read.getSoftStart(), read.getCigar(), leftmostSafeVariantPosition, tail, false);
+        return getReadCoordinateForReferenceCoordinate(read.getSoftStart(), read.getCigar(), leftmostSafeVariantPosition, tail, true);
     }
 
     /**
