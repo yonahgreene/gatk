@@ -26,6 +26,14 @@ public class HaplotypeCallerReadThreadingAssemblerArgumentCollection extends Rea
     public boolean doNotRecoverDanglingBranches = false;
 
     /**
+     * By default, the read threading assembler will skip kmers that precede the first unique kmer in a read. If this argument is
+     * set to true, it threads backwards from the first unique kmer to the beginning to the read.
+     */
+    @Hidden
+    @Argument(fullName="thread-backward-from-first-unique-kmer", doc="Thread backward from first unique kmer in reads.", optional = true)
+    public boolean threadBackwardFromFirstUniqueKmer = false;
+
+    /**
      * As of version 3.3, this argument is no longer needed because dangling end recovery is now the default behavior. See GATK 3.3 release notes for more details.
      */
     @Deprecated
@@ -48,6 +56,7 @@ public class HaplotypeCallerReadThreadingAssemblerArgumentCollection extends Rea
         assemblyEngine.setDebugGraphTransformations(debugGraphTransformations);
         assemblyEngine.setRecoverDanglingBranches(!doNotRecoverDanglingBranches);
         assemblyEngine.setRecoverAllDanglingBranches(recoverAllDanglingBranches);
+        assemblyEngine.setThreadBackwardFromFirstUniqueKmer(threadBackwardFromFirstUniqueKmer);
         assemblyEngine.setMinDanglingBranchLength(minDanglingBranchLength);
 
         if ( graphOutput != null ) {

@@ -47,6 +47,8 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
 
     private boolean startThreadingOnlyAtExistingVertex = false;
 
+    private boolean threadBackwardFromFirstUniqueKmer = false;
+
     /** for debugging info printing */
     private static int counter = 0;
 
@@ -84,21 +86,6 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
      */
     public ReadThreadingGraph(final int kmerSize) {
         this(kmerSize, false, (byte)6, 1);
-    }
-
-    /**
-     * Constructs a read-threading-graph for a string representation.
-     *
-     * <p>
-     *     Note: only used for testing.
-     * </p>
-     * @param s the string representation of the graph {@code null}.
-     */
-    @VisibleForTesting
-    protected ReadThreadingGraph(final int kmerSizeFromString, final EdgeFactory<MultiDeBruijnVertex, MultiSampleEdge> edgeFactory) {
-        super(kmerSizeFromString, new MyEdgeFactory(1));
-        debugGraphTransformations = false;
-        minBaseQualityToUseInAssembly = 0;
     }
 
     @VisibleForTesting
@@ -230,7 +217,9 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
         final MultiDeBruijnVertex startingVertex = getOrCreateKmerVertex(seqForKmers.sequence, uniqueStartPos);
 
         // increase the counts of all edges incoming into the starting vertex supported by going back in sequence
-        if (INCREASE_COUNTS_BACKWARDS) {
+        // TODO: how does this interact with threading backwards?  what is it for? should it be turned off regardless?
+        // TODO: and what about adaptive pruning?
+        if (INCREASE_COUNTS_BACKWARDS && !threadBackwardFromFirstUniqueKmer) {
             increaseCountsInMatchedKmers(seqForKmers, startingVertex, startingVertex.getSequence(), kmerSize - 2);
         }
 
@@ -240,16 +229,25 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
 
         // keep track of information about the reference source
         if ( seqForKmers.isRef ) {
-            if ( refSource != null ) {
-                throw new IllegalStateException("Found two refSources! prev: " + refSource + ", new: " + startingVertex);
-            }
+            Utils.validate( refSource == null, () -> "Found two refSources! prev: " + refSource + ", new: " + startingVertex);
             refSource = new Kmer(seqForKmers.sequence, seqForKmers.start, kmerSize);
+        }
+
+        // extend backwards
+        if (threadBackwardFromFirstUniqueKmer) {
+            MultiDeBruijnVertex vertex = startingVertex;
+            for (int i = uniqueStartPos - 1; i >= 0; i--) {
+                vertex = extendChainByOne(vertex, seqForKmers.sequence, i, seqForKmers.count, seqForKmers.isRef, true);
+                if (debugGraphTransformations) {
+                    vertex.addRead(seqForKmers.name);
+                }
+            }
         }
 
         // loop over all of the bases in sequence, extending the graph by one base at each point, as appropriate
         MultiDeBruijnVertex vertex = startingVertex;
         for ( int i = uniqueStartPos + 1; i <= seqForKmers.stop - kmerSize; i++ ) {
-            vertex = extendChainByOne(vertex, seqForKmers.sequence, i, seqForKmers.count, seqForKmers.isRef);
+            vertex = extendChainByOne(vertex, seqForKmers.sequence, i, seqForKmers.count, seqForKmers.isRef, false);
             if ( debugGraphTransformations ) {
                 vertex.addRead(seqForKmers.name);
             }
@@ -281,7 +279,6 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
      * Checks whether a kmer can be the threading start based on the current threading start location policy.
      *
      * @see #setThreadingStartOnlyAtExistingVertex(boolean)
-     * @see #getThreadingStartOnlyAtExistingVertex()
      *
      * @param kmer the query kmer.
      * @return {@code true} if we can start thread the sequence at this kmer, {@code false} otherwise.
@@ -299,6 +296,16 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
      */
     public final void setThreadingStartOnlyAtExistingVertex(final boolean value) {
         startThreadingOnlyAtExistingVertex = value;
+    }
+
+    /**
+     * Changes whether the graph threads backwards from the first unique kmer when this is not the first kmer of the read.
+     *
+     * @param value if {@code true}, threading will go backwards from the first unique vertex to the beginning of the read,
+     *              in addition of course to threading forward from this vertex to the end of the read.
+     */
+    public void setThreadBackwardFromFirstUniqueKmer(final boolean value) {
+        this.threadBackwardFromFirstUniqueKmer = value;
     }
 
     /**
@@ -872,7 +879,7 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
      *
      * @param start   the reference vertex to start from
      * @param direction describes which direction to move in the graph (i.e. down to the reference sink or up to the source)
-     * @param blacklistedEdges edges to ignore in the traversal down; useful to exclude the non-reference dangling paths
+     * @param blacklistedEdge edges to ignore in the traversal down; useful to exclude the non-reference dangling paths
      * @return the path (non-null, non-empty)
      */
     private List<MultiDeBruijnVertex> getReferencePath(final MultiDeBruijnVertex start,
@@ -1150,16 +1157,16 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
      * @param isRef is this the reference sequence?
      * @return a non-null vertex connecting prevVertex to in the graph based on sequence
      */
-    private MultiDeBruijnVertex extendChainByOne(final MultiDeBruijnVertex prevVertex, final byte[] sequence, final int kmerStart, final int count, final boolean isRef) {
-        final Set<MultiSampleEdge> outgoingEdges = outgoingEdgesOf(prevVertex);
+    private MultiDeBruijnVertex extendChainByOne(final MultiDeBruijnVertex prevVertex, final byte[] sequence, final int kmerStart, final int count, final boolean isRef, final boolean backwards) {
+        final Set<MultiSampleEdge> extantEdges = backwards ? incomingEdgesOf(prevVertex) : outgoingEdgesOf(prevVertex);
 
-        final int nextPos = kmerStart + kmerSize - 1;
-        for ( final MultiSampleEdge outgoingEdge : outgoingEdges ) {
-            final MultiDeBruijnVertex target = getEdgeTarget(outgoingEdge);
-            if ( target.getSuffix() == sequence[nextPos] ) {
+        final int nextPos = backwards ? kmerStart : kmerStart + kmerSize - 1;
+        for ( final MultiSampleEdge extantEdge : extantEdges ) {
+            final MultiDeBruijnVertex nextVertex = backwards ? getEdgeSource(extantEdge) : getEdgeTarget(extantEdge);
+            if ( (backwards ? nextVertex.getPrefix() : nextVertex.getSuffix()) == sequence[nextPos] ) {
                 // we've got a match in the chain, so simply increase the count of the edge by 1 and continue
-                outgoingEdge.incMultiplicity(count);
-                return target;
+                extantEdge.incMultiplicity(count);
+                return nextVertex;
             }
         }
 
@@ -1167,13 +1174,11 @@ public class ReadThreadingGraph extends BaseGraph<MultiDeBruijnVertex, MultiSamp
         final Kmer kmer = new Kmer(sequence, kmerStart, kmerSize);
         final MultiDeBruijnVertex uniqueMergeVertex = getUniqueKmerVertex(kmer, false);
 
-        if ( isRef && uniqueMergeVertex != null ) {
-            throw new IllegalStateException("Found a unique vertex to merge into the reference graph " + prevVertex + " -> " + uniqueMergeVertex);
-        }
+        Utils.validate( !(isRef && uniqueMergeVertex != null), () -> "Found a unique vertex to merge into the reference graph " + prevVertex + " -> " + uniqueMergeVertex);
 
         // either use our unique merge vertex, or create a new one in the chain
         final MultiDeBruijnVertex nextVertex = uniqueMergeVertex == null ? createVertex(kmer) : uniqueMergeVertex;
-        addEdge(prevVertex, nextVertex, ((MyEdgeFactory)getEdgeFactory()).createEdge(isRef, count));
+        addEdge(backwards ? nextVertex : prevVertex, backwards ? prevVertex : nextVertex, ((MyEdgeFactory)getEdgeFactory()).createEdge(isRef, count));
         return nextVertex;
     }
 

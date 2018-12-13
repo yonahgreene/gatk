@@ -26,6 +26,7 @@ public class MutectReadThreadingAssemblerArgumentCollection extends ReadThreadin
         assemblyEngine.setDebugGraphTransformations(debugGraphTransformations);
         assemblyEngine.setRecoverDanglingBranches(true);
         assemblyEngine.setRecoverAllDanglingBranches(recoverAllDanglingBranches);
+        assemblyEngine.setThreadBackwardFromFirstUniqueKmer(true);
         assemblyEngine.setMinDanglingBranchLength(minDanglingBranchLength);
 
         if ( graphOutput != null ) {

@@ -57,6 +57,7 @@ public final class ReadThreadingAssembler {
     private boolean debugGraphTransformations = false;
     private boolean recoverDanglingBranches = true;
     private boolean recoverAllDanglingBranches = false;
+    private boolean threadBackwardFromFirstUniqueKmer = false;
     private int minDanglingBranchLength = 0;
     
     protected byte minBaseQualityToUseInAssembly = DEFAULT_MIN_BASE_QUALITY_TO_USE;
@@ -440,6 +441,7 @@ public final class ReadThreadingAssembler {
         final ReadThreadingGraph rtgraph = new ReadThreadingGraph(kmerSize, debugGraphTransformations, minBaseQualityToUseInAssembly, numPruningSamples);
 
         rtgraph.setThreadingStartOnlyAtExistingVertex(!recoverDanglingBranches);
+        rtgraph.setThreadBackwardFromFirstUniqueKmer(threadBackwardFromFirstUniqueKmer);
 
         // add the reference sequence to the graph
         rtgraph.addSequence("ref", refHaplotype.getBases(), true);
@@ -601,6 +603,10 @@ public final class ReadThreadingAssembler {
     public void setRecoverAllDanglingBranches(final boolean recoverAllDanglingBranches) {
         this.recoverAllDanglingBranches = recoverAllDanglingBranches;
         recoverDanglingBranches = true;
+    }
+    
+    public void setThreadBackwardFromFirstUniqueKmer(final boolean threadBackwardFromFirstUniqueKmer) {
+        this.threadBackwardFromFirstUniqueKmer = threadBackwardFromFirstUniqueKmer;
     }
 
     public void setMinDanglingBranchLength( final int minDanglingBranchLength ) {

@@ -118,6 +118,18 @@ public final class MultiDeBruijnVertex extends BaseVertex {
     }
 
     /**
+     * Get the prefix byte of this DeBruijnVertex
+     *
+     * The prefix byte is simply the first byte of the kmer sequence, so if this is holding sequence ACT
+     * getSuffix would return A
+     *
+     * @return a byte
+     */
+    public byte getPrefix() {
+        return sequence[0];
+    }
+
+    /**
      * Optimized version that returns a byte[] for the single byte suffix of this graph without allocating memory.
      *
      * Should not be modified
