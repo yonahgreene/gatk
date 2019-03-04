@@ -1,8 +1,11 @@
 package org.broadinstitute.hellbender.tools.copynumber.formats.collections;
 
 import com.google.common.collect.Lists;
+import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
+import htsjdk.samtools.SAMTextHeaderCodec;
+import htsjdk.samtools.util.BufferedLineReader;
 import htsjdk.samtools.util.Log;
 import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.RealMatrix;
@@ -14,14 +17,17 @@ import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.SimpleSam
 import org.broadinstitute.hellbender.tools.copynumber.formats.records.SimpleCount;
 import org.broadinstitute.hellbender.utils.LoggingUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
+import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
 import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 
 public final class SimpleCountCollectionUnitTest extends GATKBaseTest {
@@ -93,13 +99,28 @@ public final class SimpleCountCollectionUnitTest extends GATKBaseTest {
     @Test
     public void testQuery() {
         LoggingUtils.setLoggingLevel(Log.LogLevel.DEBUG);
-        final File file = new File("/home/slee/working/gatk/test.counts.tsv");
-        final FeatureDataSource<SimpleCount> localSource = new FeatureDataSource<>("/home/slee/working/gatk/test.counts.tsv");
-        final FeatureDataSource<SimpleCount> bucketSource = new FeatureDataSource<>("gs://broad-dsde-methods-slee/test.counts.tsv");
+        final String localPath = "/home/slee/working/gatk/test_files/test.counts.tsv";
+        final String bucketPath = "gs://broad-dsde-methods-slee/test.counts.tsv";
+
+        final File file = new File(localPath);
+        final FeatureDataSource<SimpleCount> localSource = new FeatureDataSource<>(localPath);
+        final FeatureDataSource<SimpleCount> bucketSource = new FeatureDataSource<>(bucketPath);
+
+        final SimpleInterval interval = new SimpleInterval("1", 1, 500000);
+
         final SimpleCountCollection counts = SimpleCountCollection.read(file);
-        final SimpleInterval interval = new SimpleInterval("chr3", 1, 11000);
-//        System.out.println(source.getSequenceDictionary().toString());
-//        System.out.println(counts.getMetadata().getSequenceDictionary().toString());
+
+        final BufferedLineReader localReader = new BufferedLineReader(BucketUtils.openFile(localPath));
+        final SAMFileHeader localHeader = new SAMTextHeaderCodec().decode(localReader, localPath);
+
+        final BufferedLineReader bucketReader = new BufferedLineReader(BucketUtils.openFile(bucketPath));
+        final SAMFileHeader bucketHeader = new SAMTextHeaderCodec().decode(bucketReader, bucketPath);
+
+        System.out.println(Stream.of(counts.getMetadata().toHeader().getSAMString(), localHeader.getSAMString(), bucketHeader.getSAMString()).distinct().count() == 1);
+
+        System.out.println(localSource.getHeader().toString());
+        System.out.println(bucketSource.getHeader().toString());
+
         System.out.println(counts.getOverlapDetector().getOverlaps(interval).stream().sorted(counts.getComparator()).collect(Collectors.toList()));
         System.out.println(Lists.newArrayList(localSource.query(interval)));
         System.out.println(Lists.newArrayList(bucketSource.query(interval)));

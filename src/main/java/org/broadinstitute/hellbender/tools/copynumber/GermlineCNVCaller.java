@@ -1,5 +1,9 @@
 package org.broadinstitute.hellbender.tools.copynumber;
 
+import com.google.common.collect.Lists;
+import htsjdk.samtools.SAMFileHeader;
+import htsjdk.samtools.SAMTextHeaderCodec;
+import htsjdk.samtools.util.BufferedLineReader;
 import org.broadinstitute.barclay.argparser.Advanced;
 import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.ArgumentCollection;
@@ -10,14 +14,21 @@ import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.cmdline.argumentcollections.IntervalArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.argumentcollections.OptionalIntervalArgumentCollection;
 import org.broadinstitute.hellbender.cmdline.programgroups.CopyNumberProgramGroup;
+import org.broadinstitute.hellbender.engine.FeatureDataSource;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.copynumber.arguments.*;
 import org.broadinstitute.hellbender.tools.copynumber.formats.collections.AnnotatedIntervalCollection;
 import org.broadinstitute.hellbender.tools.copynumber.formats.collections.SimpleCountCollection;
 import org.broadinstitute.hellbender.tools.copynumber.formats.collections.SimpleIntervalCollection;
+import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.Metadata;
+import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.MetadataUtils;
+import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.SampleLocatableMetadata;
 import org.broadinstitute.hellbender.tools.copynumber.formats.records.SimpleCount;
+import org.broadinstitute.hellbender.utils.IntervalUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
+import org.broadinstitute.hellbender.utils.config.ConfigFactory;
+import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.io.Resource;
 import org.broadinstitute.hellbender.utils.python.PythonScriptExecutor;
@@ -197,14 +208,16 @@ public final class GermlineCNVCaller extends CommandLineProgram {
     public static final String RUN_MODE_LONG_NAME = "run-mode";
 
     @Argument(
-            doc = "Input read-count files containing integer read counts in genomic intervals for all samples.  " +
-                    "All intervals specified via -L must be contained; " +
-                    "if none are specified, then intervals must be identical and in the same order for all samples.",
+            doc = "Input paths for read-count files containing integer read counts in genomic intervals for all samples.  " +
+                    "All intervals specified via -L/-XL must be contained; " +
+                    "if none are specified, then intervals must be identical and in the same order for all samples.  " +
+                    "If read-count files are given by GCS paths, have the extension .counts.tsv, and have been indexed, " +
+                    "only the specified intervals will be queried.",
             fullName = StandardArgumentDefinitions.INPUT_LONG_NAME,
             shortName = StandardArgumentDefinitions.INPUT_SHORT_NAME,
             minElements = 1
     )
-    private List<File> inputReadCountFiles = new ArrayList<>();
+    private List<String> inputReadCountPaths = new ArrayList<>();
 
     @Argument(
             doc = "Tool run-mode.",
@@ -305,10 +318,10 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         germlineDenoisingModelArgumentCollection.validate();
         germlineCNVHybridADVIArgumentCollection.validate();
 
-        Utils.validateArg(inputReadCountFiles.size() == new HashSet<>(inputReadCountFiles).size(),
-                "List of input read-count files cannot contain duplicates.");
+        Utils.validateArg(inputReadCountPaths.size() == new HashSet<>(inputReadCountPaths).size(),
+                "List of input read-count file paths cannot contain duplicates.");
 
-        inputReadCountFiles.forEach(CopyNumberArgumentValidationUtils::validateInputs);
+        inputReadCountPaths.forEach(CopyNumberArgumentValidationUtils::validateInputs);
         CopyNumberArgumentValidationUtils.validateInputs(
                 inputContigPloidyCallsDir,
                 inputModelDir,
@@ -326,9 +339,9 @@ public final class GermlineCNVCaller extends CommandLineProgram {
         } else {
             //get sequence dictionary and intervals from the first read-count file to use to validate remaining files
             //(this first file is read again below, which is slightly inefficient but is probably not worth the extra code)
-            final File firstReadCountFile = inputReadCountFiles.get(0);
+            final String firstReadCountPath = inputReadCountPaths.get(0);
             specifiedIntervals = CopyNumberArgumentValidationUtils.resolveIntervals(
-                    firstReadCountFile, intervalArgumentCollection, logger);
+                    firstReadCountPath, intervalArgumentCollection, logger);
 
             //in cohort mode, intervals are specified via -L; we write them to a temporary file
             specifiedIntervalsFile = IOUtils.createTempFile("intervals", ".tsv");
@@ -347,7 +360,7 @@ public final class GermlineCNVCaller extends CommandLineProgram {
 
         if (runMode.equals(RunMode.COHORT)) {
             logger.info("Running the tool in COHORT mode...");
-            Utils.validateArg(inputReadCountFiles.size() > 1, "At least two samples must be provided in " +
+            Utils.validateArg(inputReadCountPaths.size() > 1, "At least two samples must be provided in " +
                     "COHORT mode.");
             if (inputModelDir != null) {
                 logger.info("(advanced feature) A denoising-model directory is provided in COHORT mode; " +
@@ -370,31 +383,53 @@ public final class GermlineCNVCaller extends CommandLineProgram {
 
     private List<File> writeIntervalSubsetReadCountFiles() {
         logger.info("Validating and aggregating data from input read-count files...");
-        final int numSamples = inputReadCountFiles.size();
+        final int numSamples = inputReadCountPaths.size();
         final List<File> intervalSubsetReadCountFiles = new ArrayList<>(numSamples);
         final Set<SimpleInterval> intervalSubset = new HashSet<>(specifiedIntervals.getRecords());
+        final List<SimpleInterval> mergedIntervalSubset = IntervalUtils.getIntervalsWithFlanks(
+                specifiedIntervals.getRecords(), 0, specifiedIntervals.getMetadata().getSequenceDictionary());
+        final SAMTextHeaderCodec samTextHeaderCodec = new SAMTextHeaderCodec();
 
-        final ListIterator<File> inputReadCountFilesIterator = inputReadCountFiles.listIterator();
-        while (inputReadCountFilesIterator.hasNext()) {
-            final int sampleIndex = inputReadCountFilesIterator.nextIndex();
-            final File inputReadCountFile = inputReadCountFilesIterator.next();
+        final ListIterator<String> inputReadCountPathsIterator = inputReadCountPaths.listIterator();
+        while (inputReadCountPathsIterator.hasNext()) {
+            final int sampleIndex = inputReadCountPathsIterator.nextIndex();
+            final String inputReadCountPath = inputReadCountPathsIterator.next();
             logger.info(String.format("Aggregating read-count file %s (%d / %d)",
-                    inputReadCountFile, sampleIndex + 1, numSamples));
-            final SimpleCountCollection readCounts = SimpleCountCollection.read(inputReadCountFile);
-            if (!CopyNumberArgumentValidationUtils.isSameDictionary(
-                    readCounts.getMetadata().getSequenceDictionary(), specifiedIntervals.getMetadata().getSequenceDictionary())) {
-                logger.warn("Sequence dictionary for read-count file %s does not match that " +
-                        "in other read-count files.", inputReadCountFile);
+                    inputReadCountPath, sampleIndex + 1, numSamples));
+
+            final SampleLocatableMetadata metadata;
+            final List<SimpleCount> subsetReadCounts;
+            if (BucketUtils.isCloudStorageUrl(inputReadCountPath)) {
+                final FeatureDataSource<SimpleCount> readCounts = new FeatureDataSource<>(
+                        inputReadCountPath,
+                        inputReadCountPath,
+                        1_000_000,
+                        SimpleCount.class,
+                        ConfigFactory.getInstance().getGATKConfig().cloudPrefetchBuffer(),
+                        ConfigFactory.getInstance().getGATKConfig().cloudIndexPrefetchBuffer());
+                readCounts.setIntervalsForTraversal(mergedIntervalSubset);
+                final BufferedLineReader reader = new BufferedLineReader(BucketUtils.openFile(inputReadCountPath));
+                final SAMFileHeader header = samTextHeaderCodec.decode(reader, inputReadCountPath);
+                metadata = MetadataUtils.fromHeader(header, Metadata.Type.SAMPLE_LOCATABLE);
+                subsetReadCounts = Lists.newArrayList(readCounts.iterator());
+            } else {
+                final SimpleCountCollection readCounts = SimpleCountCollection.read(new File(inputReadCountPath));
+                metadata = readCounts.getMetadata();
+                subsetReadCounts = readCounts.getRecords().stream()
+                        .filter(c -> intervalSubset.contains(c.getInterval()))
+                        .collect(Collectors.toList());
             }
-            final List<SimpleCount> subsetReadCounts = readCounts.getRecords().stream()
-                    .filter(c -> intervalSubset.contains(c.getInterval()))
-                    .collect(Collectors.toList());
+
+            if (!CopyNumberArgumentValidationUtils.isSameDictionary(
+                    metadata.getSequenceDictionary(), specifiedIntervals.getMetadata().getSequenceDictionary())) {
+                logger.warn("Sequence dictionary for read-count file %s does not match that " +
+                        "in other read-count files.", inputReadCountPath);
+            }
             Utils.validateArg(subsetReadCounts.size() == intervalSubset.size(),
                     String.format("Intervals for read-count file %s do not contain all specified intervals.",
-                            inputReadCountFile));
+                            inputReadCountPath));
             final File intervalSubsetReadCountFile = IOUtils.createTempFile("sample-" + sampleIndex, ".tsv");
-            new SimpleCountCollection(readCounts.getMetadata(), subsetReadCounts)
-                    .write(intervalSubsetReadCountFile);
+            new SimpleCountCollection(metadata, subsetReadCounts).write(intervalSubsetReadCountFile);
             intervalSubsetReadCountFiles.add(intervalSubsetReadCountFile);
         }
         return intervalSubsetReadCountFiles;

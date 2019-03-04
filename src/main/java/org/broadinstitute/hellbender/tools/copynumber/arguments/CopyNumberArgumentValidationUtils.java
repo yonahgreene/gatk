@@ -1,11 +1,15 @@
 package org.broadinstitute.hellbender.tools.copynumber.arguments;
 
 import com.google.common.collect.Ordering;
+import htsjdk.samtools.SAMFileHeader;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.SAMSequenceRecord;
+import htsjdk.samtools.SAMTextHeaderCodec;
+import htsjdk.samtools.util.BufferedLineReader;
 import htsjdk.samtools.util.Locatable;
 import org.apache.logging.log4j.Logger;
 import org.broadinstitute.hellbender.cmdline.argumentcollections.IntervalArgumentCollection;
+import org.broadinstitute.hellbender.engine.FeatureDataSource;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.copynumber.formats.collections.AbstractLocatableCollection;
 import org.broadinstitute.hellbender.tools.copynumber.formats.collections.AnnotatedIntervalCollection;
@@ -14,12 +18,16 @@ import org.broadinstitute.hellbender.tools.copynumber.formats.collections.Simple
 import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.LocatableMetadata;
 import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.SimpleLocatableMetadata;
 import org.broadinstitute.hellbender.tools.copynumber.formats.records.AnnotatedInterval;
+import org.broadinstitute.hellbender.tools.copynumber.formats.records.SimpleCount;
 import org.broadinstitute.hellbender.utils.*;
+import org.broadinstitute.hellbender.utils.config.ConfigFactory;
+import org.broadinstitute.hellbender.utils.gcs.BucketUtils;
 import org.broadinstitute.hellbender.utils.io.IOUtils;
 import org.broadinstitute.hellbender.utils.python.PythonScriptExecutor;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -102,12 +110,65 @@ public final class CopyNumberArgumentValidationUtils {
         if (intervalArgumentCollection.intervalsSpecified()) {
             logger.info("Intervals specified...");
             validateIntervalArgumentCollection(intervalArgumentCollection);
-            return new SimpleIntervalCollection(metadata,
+            return new SimpleIntervalCollection(
+                    metadata,
                     intervalArgumentCollection.getIntervals(sequenceDictionary));
         } else {
             logger.info(String.format("Retrieving intervals from read-count file (%s)...", readCountFile));
-            return new SimpleIntervalCollection(metadata, firstReadCounts.getIntervals());
+            return new SimpleIntervalCollection(
+                    metadata,
+                    firstReadCounts.getIntervals());
         }
+    }
+
+    /**
+     * Resolve intervals from an {@link IntervalArgumentCollection} and a read-count path.
+     * If intervals are not specified in the {@link IntervalArgumentCollection}, they are taken from the
+     * read-count path.  The sequence dictionary is taken from the read-count path.  A {@link SimpleIntervalCollection}
+     * constructed using these intervals and sequence dictionary is returned and can be used for further validation.
+     */
+    public static SimpleIntervalCollection resolveIntervals(final String readCountPath,
+                                                            final IntervalArgumentCollection intervalArgumentCollection,
+                                                            final Logger logger) {
+        Utils.nonNull(readCountPath);
+        IOUtils.assertFileIsReadable(IOUtils.getPath(readCountPath));
+        Utils.nonNull(intervalArgumentCollection);
+        Utils.nonNull(logger);
+
+        if (intervalArgumentCollection.intervalsSpecified()) {
+            logger.info("Intervals specified...");
+            validateIntervalArgumentCollection(intervalArgumentCollection);
+        } else {
+            logger.info(String.format("Retrieving intervals from read-count file (%s)...", readCountPath));
+        }
+
+        final LocatableMetadata metadata;
+        final List<SimpleInterval> intervals;
+        if (BucketUtils.isCloudStorageUrl(readCountPath)) {
+            final FeatureDataSource<SimpleCount> readCounts = new FeatureDataSource<>(
+                    readCountPath,
+                    readCountPath,
+                    1_000_000,
+                    SimpleCount.class,
+                    ConfigFactory.getInstance().getGATKConfig().cloudPrefetchBuffer(),
+                    ConfigFactory.getInstance().getGATKConfig().cloudIndexPrefetchBuffer());
+            final BufferedLineReader reader = new BufferedLineReader(BucketUtils.openFile(readCountPath));
+            final SAMFileHeader header = new SAMTextHeaderCodec().decode(reader, readCountPath);
+            final SAMSequenceDictionary sequenceDictionary = header.getSequenceDictionary();
+            metadata = new SimpleLocatableMetadata(sequenceDictionary);
+            intervals = intervalArgumentCollection.intervalsSpecified()
+                    ? intervalArgumentCollection.getIntervals(sequenceDictionary)
+                    : Utils.stream(readCounts).map(SimpleCount::getInterval).collect(Collectors.toList());
+        } else {
+            final SimpleCountCollection readCounts = SimpleCountCollection.read(new File(readCountPath));
+            final SAMSequenceDictionary sequenceDictionary = readCounts.getMetadata().getSequenceDictionary();
+            metadata = new SimpleLocatableMetadata(sequenceDictionary);
+            intervals = intervalArgumentCollection.intervalsSpecified()
+                    ? intervalArgumentCollection.getIntervals(sequenceDictionary)
+                    : readCounts.getIntervals();
+        }
+
+        return new SimpleIntervalCollection(metadata, intervals);
     }
 
     /**
@@ -179,6 +240,19 @@ public final class CopyNumberArgumentValidationUtils {
                     } else if (input.isDirectory() && !input.canRead()) {
                         throw new UserException.CouldNotReadInputFile(input);
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Validate that input paths are readable if they are not {@code null} (i.e., optional inputs).
+     */
+    public static void validateInputs(final String ... inputs) {
+        if (inputs != null) {
+            for (final String input : inputs) {
+                if (input != null) {
+                    IOUtils.assertFileIsReadable(IOUtils.getPath(input));
                 }
             }
         }
