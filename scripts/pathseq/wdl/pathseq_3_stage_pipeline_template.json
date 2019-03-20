@@ -1,6 +1,6 @@
 {
   "PathSeqThreeStageWorkflow.sample_name": "sample",
-  "PathSeqThreeStageWorkflow.input_bam": "gs://my-bucket/sample.bam",
+  "PathSeqThreeStageWorkflow.input_bam_or_cram": "gs://my-bucket/sample.bam",
 
   "PathSeqThreeStageWorkflow.is_host_aligned": false,
   "PathSeqThreeStageWorkflow.min_clipped_read_length": 60,

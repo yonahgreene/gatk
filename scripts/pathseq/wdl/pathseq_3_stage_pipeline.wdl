@@ -279,6 +279,10 @@ workflow PathSeqThreeStageWorkflow {
   Int? align_mem_gb
   Int? score_mem_gb
 
+  Boolean? filter_ssd
+  Boolean? align_ssd
+  Boolean? score_ssd
+
   # Optional input to increase all disk sizes in case of outlier sample with strange size behavior
   Int? filter_additional_disk_gb
   Int? align_additional_disk_gb
@@ -305,7 +309,8 @@ workflow PathSeqThreeStageWorkflow {
       gatk_docker=gatk_docker,
       preemptible_attempts=filter_preemptible_attempts,
       additional_disk_gb=filter_additional_disk_gb,
-      cpu=filter_cpu
+      cpu=filter_cpu,
+      use_ssd=filter_ssd
   }
 
   call PathSeqAlign {
@@ -320,7 +325,8 @@ workflow PathSeqThreeStageWorkflow {
       gatk_docker=gatk_docker,
       preemptible_attempts=align_preemptible_attempts,
       additional_disk_gb=align_additional_disk_gb,
-      cpu=align_cpu
+      cpu=align_cpu,
+      use_ssd=align_ssd
   }
 
   call PathSeqScore {
@@ -337,7 +343,8 @@ workflow PathSeqThreeStageWorkflow {
       gatk_docker=gatk_docker,
       preemptible_attempts=score_preemptible_attempts,
       additional_disk_gb=score_additional_disk_gb,
-      cpu=score_cpu
+      cpu=score_cpu,
+      use_ssd=score_ssd
   }
 
   output {
