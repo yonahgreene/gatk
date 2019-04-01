@@ -235,6 +235,29 @@ public final class IntervalUtils {
         return sortAndMergeIntervals(genomeLocParser, allIntervals, intervalMergingRule);
     }
 
+    public static List<GenomeLoc> loadIntervalsNonMerging(
+            final List<String> intervalStrings,
+            final int padding,
+            final GenomeLocParser genomeLocParser) {
+        Utils.nonNull(intervalStrings);
+        List<GenomeLoc> allIntervals = new ArrayList<>();
+        for ( final String intervalString : intervalStrings) {
+            Utils.nonNull(intervalString);
+            List<GenomeLoc> intervals = parseIntervalArguments(genomeLocParser, intervalString);
+
+            if (padding > 0) {
+                intervals = intervals.stream()
+                        .map(loc -> genomeLocParser.createPaddedGenomeLoc(loc, padding))
+                        .collect(Collectors.toList());
+            }
+            allIntervals.addAll(intervals);
+        }
+
+        return allIntervals.stream()
+                .sorted()
+                .collect(Collectors.toList());
+    }
+
 
     /**
      * Turns a set of strings describing intervals into a parsed set of intervals.  Valid string elements can be files,
@@ -908,6 +931,8 @@ public final class IntervalUtils {
      */
     public static List<GenomeLoc> mergeIntervalLocations(final List<GenomeLoc> raw, final IntervalMergingRule rule) {
         if (raw.size() <= 1) {
+            return Collections.unmodifiableList(raw);
+        } else if (rule == IntervalMergingRule.NONE) {
             return Collections.unmodifiableList(raw);
         } else {
             final ArrayList<GenomeLoc> merged = new ArrayList<>();
