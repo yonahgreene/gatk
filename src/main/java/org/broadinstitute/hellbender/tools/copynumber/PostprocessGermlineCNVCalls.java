@@ -15,7 +15,6 @@ import org.broadinstitute.hellbender.tools.copynumber.formats.collections.*;
 import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.LocatableMetadata;
 import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.SimpleSampleLocatableMetadata;
 import org.broadinstitute.hellbender.tools.copynumber.formats.records.CopyNumberPosteriorDistribution;
-import org.broadinstitute.hellbender.tools.copynumber.formats.records.NonLocatableLinearCopyRatio;
 import org.broadinstitute.hellbender.tools.copynumber.formats.records.LinearCopyRatio;
 import org.broadinstitute.hellbender.tools.copynumber.formats.records.IntervalCopyNumberGenotypingData;
 import org.broadinstitute.hellbender.tools.copynumber.gcnv.GermlineCNVIntervalVariantComposer;
@@ -384,12 +383,12 @@ public final class PostprocessGermlineCNVCalls extends GATKTool {
     private void concatenateDenoisedCopyRatioFiles() {
         logger.info("Generating denoised copy ratios...");
         final List<SimpleInterval> concatenatedIntervalList = new ArrayList<>();
-        final List<NonLocatableLinearCopyRatio> concatenatedDenoisedCopyRatioRecordsList = new ArrayList<>();
+        final List<Double> concatenatedDenoisedCopyRatioRecordsList = new ArrayList<>();
         /* Read in and concatenate all denoised copy ratio files into one list */
         for (int shardIndex = 0; shardIndex < numShards; shardIndex++) {
             final File shardRootDirectory = sortedCallsShardPaths.get(shardIndex);
             final File denoisedCopyRatioFile = getSampleDenoisedCopyRatioFile(shardRootDirectory, sampleIndex);
-            final NonLocatableLinearCopyRatioCollection shardNonLocatableLinearCopyRatioCollectionForShard = new NonLocatableLinearCopyRatioCollection(denoisedCopyRatioFile);
+            final NonLocatableDoubleCollection shardNonLocatableLinearCopyRatioCollectionForShard = new NonLocatableDoubleCollection(denoisedCopyRatioFile);
             final List<SimpleInterval> shardIntervals = sortedIntervalCollections.get(shardIndex).getIntervals();
             final String sampleNameFromDenoisedCopyRatioFile = shardNonLocatableLinearCopyRatioCollectionForShard
                     .getMetadata().getSampleName();
@@ -397,7 +396,7 @@ public final class PostprocessGermlineCNVCalls extends GATKTool {
                     String.format("Sample name found in the header of denoised copy ratio file for shard %d " +
                                     "is different from the expected sample name (found: %s, expected: %s).",
                             shardIndex, sampleNameFromDenoisedCopyRatioFile, sampleName));
-            final List<NonLocatableLinearCopyRatio> shardDenoisedCopyRatioRecords = shardNonLocatableLinearCopyRatioCollectionForShard.getRecords();
+            final List<Double> shardDenoisedCopyRatioRecords = shardNonLocatableLinearCopyRatioCollectionForShard.getRecords();
             Utils.validate(shardIntervals.size() == shardDenoisedCopyRatioRecords.size(),
                     String.format("The number of entries in denoised copy ratio file for shard %d does " +
                                     "not match the number of entries in the shard interval list (copy ratio list size: %d, " +

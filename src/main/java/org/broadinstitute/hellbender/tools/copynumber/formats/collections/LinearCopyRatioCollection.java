@@ -2,7 +2,6 @@ package org.broadinstitute.hellbender.tools.copynumber.formats.collections;
 
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.copynumber.formats.metadata.SampleLocatableMetadata;
-import org.broadinstitute.hellbender.tools.copynumber.formats.records.NonLocatableLinearCopyRatio;
 import org.broadinstitute.hellbender.tools.copynumber.formats.records.LinearCopyRatio;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.tsv.DataLine;
@@ -33,28 +32,28 @@ public class LinearCopyRatioCollection extends AbstractSampleLocatableCollection
 
     public LinearCopyRatioCollection(final File inputFile) {
         super(inputFile, DenoisedLocatableCopyRatioTableColumn.COLUMNS,
-                getDenoisedLocatableCopyRatioRecordFromDataLineDecoder(),
-                getDenoisedLocatableCopyRatioRecordToDataLineEncoder());
+                getLinearCopyRatioRecordFromDataLineDecoder(),
+                getLinearCopyRatioRecordToDataLineEncoder());
     }
 
     public LinearCopyRatioCollection(final SampleLocatableMetadata metadata,
                                      final List<LinearCopyRatio> linearCopyRatioList) {
         super(metadata, linearCopyRatioList, DenoisedLocatableCopyRatioTableColumn.COLUMNS,
-                getDenoisedLocatableCopyRatioRecordFromDataLineDecoder(),
-                getDenoisedLocatableCopyRatioRecordToDataLineEncoder());
+                getLinearCopyRatioRecordFromDataLineDecoder(),
+                getLinearCopyRatioRecordToDataLineEncoder());
     }
 
     /**
      * Generates an instance of {@link LinearCopyRatio} from a {@link DataLine} entry read from a denoised copy
      * ratio file output by {@link PostprocessGermlineCNVCalls}
      */
-    private static Function<DataLine, LinearCopyRatio> getDenoisedLocatableCopyRatioRecordFromDataLineDecoder() {
+    private static Function<DataLine, LinearCopyRatio> getLinearCopyRatioRecordFromDataLineDecoder() {
         return dataLine -> {
             try {
                 final String contig = dataLine.get(DenoisedLocatableCopyRatioTableColumn.CONTIG);
                 final int start = dataLine.getInt(DenoisedLocatableCopyRatioTableColumn.START);
                 final int end = dataLine.getInt(DenoisedLocatableCopyRatioTableColumn.END);
-                final NonLocatableLinearCopyRatio denoisedCopyRatio = new NonLocatableLinearCopyRatio(dataLine.getDouble(DenoisedLocatableCopyRatioTableColumn.LINEAR_COPY_RATIO));
+                final double denoisedCopyRatio = dataLine.getDouble(DenoisedLocatableCopyRatioTableColumn.LINEAR_COPY_RATIO);
                 return new LinearCopyRatio(new SimpleInterval(contig, start, end), denoisedCopyRatio);
             } catch (final IllegalArgumentException ex) {
                 throw new UserException.BadInput(String.format("Validation error occurred on line %d of the denoised copy ratio file : ", dataLine.getLineNumber())
@@ -66,11 +65,11 @@ public class LinearCopyRatioCollection extends AbstractSampleLocatableCollection
     /**
      * Generates an instance of {@link DataLine} from {@link LinearCopyRatio}
      */
-    private static BiConsumer<LinearCopyRatio, DataLine> getDenoisedLocatableCopyRatioRecordToDataLineEncoder() {
+    private static BiConsumer<LinearCopyRatio, DataLine> getLinearCopyRatioRecordToDataLineEncoder() {
         return (linearCopyRatio, dataLine) -> dataLine.append(linearCopyRatio.getContig())
                 .append(linearCopyRatio.getStart())
                 .append(linearCopyRatio.getEnd())
-                .append(linearCopyRatio.getLinearCopyRatio().getLinearCopyRatio());
+                .append(linearCopyRatio.getLinearCopyRatio());
     }
 
 }
