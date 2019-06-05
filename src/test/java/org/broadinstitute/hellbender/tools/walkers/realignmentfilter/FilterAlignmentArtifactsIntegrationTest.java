@@ -27,6 +27,7 @@ public class FilterAlignmentArtifactsIntegrationTest extends CommandLineProgramT
         final File filteredVcf = createTempFile("filtered", ".vcf");
 
         final String[] args = {
+                "-R", b37Reference,
                 "-I", tumorBam.getAbsolutePath(),
                 "-V", truthVcf.getAbsolutePath(),
                 "-L", "20",
@@ -36,5 +37,22 @@ public class FilterAlignmentArtifactsIntegrationTest extends CommandLineProgramT
         };
 
         runCommandLine(args);
+    }
+
+    @Test
+    public void testDreamFalsePositive() {
+        final File filteredVcf = createTempFile("filtered", ".vcf");
+
+        final String[] args = {
+                "-R", b37Reference,
+                "-I", "/Users/davidben/broad/gatk/dream4_tumor_chr20.bam",
+                "-V", "/Users/davidben/broad/gatk/false_positives.vcf",
+                "-L", "20",
+                "--bwa-mem-index-image", "/Users/davidben/broad/gatk/Homo_sapiens_assembly38.index_bundle",
+                "-O", filteredVcf.getAbsolutePath()
+        };
+
+        runCommandLine(args);
+        int g = 9;
     }
 }
