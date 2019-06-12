@@ -1,6 +1,5 @@
 package org.broadinstitute.hellbender.tools.walkers;
 
-import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.util.Locatable;
 import htsjdk.variant.variantcontext.*;
@@ -16,16 +15,12 @@ import org.broadinstitute.hellbender.tools.genomicsdb.GenomicsDBImport;
 import org.broadinstitute.hellbender.tools.walkers.annotator.*;
 import org.broadinstitute.hellbender.tools.walkers.annotator.allelespecific.AS_RMSMappingQuality;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.*;
-import org.broadinstitute.hellbender.tools.walkers.genotyper.afcalc.GeneralPloidyFailOverAFCalculatorProvider;
 import org.broadinstitute.hellbender.tools.walkers.mutect.M2ArgumentCollection;
 import org.broadinstitute.hellbender.utils.GATKProtectedVariantContextUtils;
 import org.broadinstitute.hellbender.utils.IntervalUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
-import org.broadinstitute.hellbender.utils.genotyper.IndexedSampleList;
-import org.broadinstitute.hellbender.utils.genotyper.SampleList;
 import org.broadinstitute.hellbender.utils.variant.GATKVCFConstants;
-import org.broadinstitute.hellbender.utils.variant.GATKVCFHeaderLines;
 import org.broadinstitute.hellbender.utils.variant.GATKVariantContextUtils;
 
 import java.io.File;
@@ -98,8 +93,11 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
     public static final String ALL_SITES_SHORT_NAME = "all-sites";
     public static final String KEEP_COMBINED_LONG_NAME = "keep-combined-raw-annotations";
     public static final String KEEP_COMBINED_SHORT_NAME = "keep-combined";
-    private static final String GVCF_BLOCK = "GVCFBlock";
-    private VCFHeader outputHeader;
+    //move to engine
+    //private static final String GVCF_BLOCK = "GVCFBlock";
+
+    //move to engine
+    //private VCFHeader outputHeader;
 
 
     @Argument(fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME, shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
@@ -167,22 +165,29 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
     private final DbsnpArgumentCollection dbsnp = new DbsnpArgumentCollection();
 
     // the genotyping engine
-    private GenotypingEngine<?> genotypingEngine;
+    //move to engine
+    //private GenotypingEngine<?> genotypingEngine;
     // the annotation engine
+    //leave
     private VariantAnnotatorEngine annotationEngine;
 
     private ReferenceConfidenceVariantContextMerger merger;
 
     // the INFO field annotation key names to remove
-    private final List<String> infoFieldAnnotationKeyNamesToRemove = new ArrayList<>();
+    //only used as local variable in onTraversalStart - MOVE
+    //private final List<String> infoFieldAnnotationKeyNamesToRemove = new ArrayList<>();
 
     // INFO Header names that require alt alleles
+    //move to engine
     final LinkedHashSet<String> infoHeaderAltAllelesLineNames = new LinkedHashSet<>();
 
     private VariantContextWriter vcfWriter;
 
     /** these are used when {@link #onlyOutputCallsStartingInIntervals) is true */
+    //pass in to callRegion() in engine
     private List<SimpleInterval> intervals;
+
+    private GenotypeGVCFsEngine gvcfEngine;
 
     /**
      * Get the largest interval per contig that contains the intervals specified on the command line.
@@ -214,30 +219,41 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
 
     @Override
     public void onTraversalStart() {
+        //leave
         if (somaticInput) {
             logger.warn("Note that the Mutect2 reference confidence mode is in BETA -- the likelihoods model and output format are subject to change in subsequent versions.");
         }
 
+        //leave
         if (!includeNonVariants) {
             changeTraversalModeToByVariant();
         }
 
+        //leave
         final VCFHeader inputVCFHeader = getHeaderForVariants();
 
+        //leave
         if(onlyOutputCallsStartingInIntervals) {
             if( !hasUserSuppliedIntervals()) {
                 throw new CommandLineException.MissingArgument("-L or -XL", "Intervals are required if --" + ONLY_OUTPUT_CALLS_STARTING_IN_INTERVALS_FULL_NAME + " was specified.");
             }
         }
 
+        //pass as arg to callRegion()
         intervals = hasUserSuppliedIntervals() ? intervalArgumentCollection.getIntervals(getBestAvailableSequenceDictionary()) :
                 Collections.emptyList();
 
-        final SampleList samples = new IndexedSampleList(inputVCFHeader.getGenotypeSamples()); //todo should this be getSampleNamesInOrder?
+        //move
+        //final SampleList samples = new IndexedSampleList(inputVCFHeader.getGenotypeSamples()); //todo should this be getSampleNamesInOrder?
 
+        //pass as arg to constructor
         annotationEngine = new VariantAnnotatorEngine(makeVariantAnnotations(), dbsnp.dbsnp, Collections.emptyList(), false, keepCombined);
 
+        //call constructor here
+
         // Request INFO field annotations inheriting from RankSumTest and RMSAnnotation added to remove list
+        //leave??
+        /*
         for ( final InfoFieldAnnotation annotation :  annotationEngine.getInfoAnnotations() ) {
             if ( annotation instanceof RankSumTest ||
                     annotation instanceof AS_RMSMappingQuality ||
@@ -248,12 +264,17 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
                 }
             }
         }
+        */
 
         // We only want the engine to generate the AS_QUAL key if we are using AlleleSpecific annotations.
-        genotypingEngine = new MinimalGenotypingEngine(createUAC(), samples, new GeneralPloidyFailOverAFCalculatorProvider(genotypeArgs), annotationEngine.isRequestedReducibleRawKey(GATKVCFConstants.AS_QUAL_KEY));
+        //pass as arg
+        //build in engine in initialize() method
+        //genotypingEngine = new MinimalGenotypingEngine(createUAC(), samples, new GeneralPloidyFailOverAFCalculatorProvider(genotypeArgs), annotationEngine.isRequestedReducibleRawKey(GATKVCFConstants.AS_QUAL_KEY));
 
+        //pass as arg to callRegion
         merger = new ReferenceConfidenceVariantContextMerger(annotationEngine, getHeaderForVariants(), somaticInput);
 
+        /*
         if ( includeNonVariants ) {
             // Save INFO header names that require alt alleles
             for ( final VCFHeaderLine headerLine : inputVCFHeader.getMetaDataInInputOrder() ) {
@@ -264,14 +285,28 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
                 }
             }
         }
+         */
 
-        setupVCFWriter(inputVCFHeader, samples);
+        //methods that cannot be called in engine bc its protected
+        Set<VCFHeaderLine> defaultToolVCFHeaderLines = getDefaultToolVCFHeaderLines();
+        vcfWriter = createVCFWriter(outputFile);
+
+        //create engine object
+        gvcfEngine = new GenotypeGVCFsEngine(annotationEngine, genotypeArgs, includeNonVariants);
+
+        vcfWriter = gvcfEngine.initialize(inputVCFHeader, defaultToolVCFHeaderLines, keepCombined, dbsnp, vcfWriter);
+
+        //setupVCFWriter(inputVCFHeader, samples);
+
     }
-
+/*
+    //move
     private static boolean annotationShouldBeSkippedForHomRefSites(VariantAnnotation annotation) {
         return annotation instanceof RankSumTest || annotation instanceof RMSMappingQuality || annotation instanceof AS_RMSMappingQuality;
     }
-
+*/
+    //move
+/*
     private void setupVCFWriter(final VCFHeader inputVCFHeader, final SampleList samples) {
         final Set<VCFHeaderLine> headerLines = new LinkedHashSet<>(inputVCFHeader.getMetaDataInInputOrder());
         headerLines.addAll(getDefaultToolVCFHeaderLines());
@@ -300,16 +335,30 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         outputHeader = new VCFHeader(headerLines, new TreeSet<>(sampleNameSet));
         vcfWriter.writeHeader(outputHeader);
     }
+*/
+
 
     @Override
     public void apply(final Locatable loc, List<VariantContext> variants, ReadsContext reads, ReferenceContext ref, FeatureContext features) {
 
+        //move all code into engine
+/*
         final List<VariantContext> variantsToProcess = getVariantSubsetToProcess(loc, variants);
 
         ref.setWindow(10, 10); //TODO this matches the gatk3 behavior but may be unnecessary
         final VariantContext mergedVC = merger.merge(variantsToProcess, loc, includeNonVariants ? ref.getBase() : null, !includeNonVariants, false);
         final VariantContext regenotypedVC = somaticInput ? regenotypeSomaticVC(mergedVC, ref, features, includeNonVariants) :
                 regenotypeVC(mergedVC, ref, features, includeNonVariants);
+*/
+
+
+        //another possibility:
+        //final VariantContext regenotypedVC = gvcfEngine.applyWork(); (returns a VariantContext)
+
+        //could leave error checking here, or put error checking in engine - if not null, return VariantContext. if null, return null.
+
+        final VariantContext regenotypedVC = gvcfEngine.callRegion(intervals, loc, variants, ref, features, merger, somaticInput, tlodThreshold, afTolerance);
+
         if (regenotypedVC != null) {
             final SimpleInterval variantStart = new SimpleInterval(regenotypedVC.getContig(), regenotypedVC.getStart(), regenotypedVC.getStart());
             if (!GATKVariantContextUtils.isSpanningDeletionOnly(regenotypedVC) &&
@@ -317,11 +366,18 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
                 vcfWriter.add(regenotypedVC);
             }
         }
-    }
 
+        //goal:
+        //vcfWriter.add(gvcfEngine.applyWork())?
+        //vcfWriter = gvcfEngine.applyWork()?
+
+    }
+/*
     // If includeNonVariants is set, we're using group-by-locus traversal. To match GATK3 GenotypeGVCFs,
     // see if there is a variant in the overlapping group that starts exactly at the locus start position, and if so
     // prioritize and process only that variant. Otherwise process all of the overlapping variants.
+    //move to engine
+
     private List<VariantContext> getVariantSubsetToProcess(final Locatable loc, List<VariantContext> preProcessedVariants) {
         if (includeNonVariants) {
             final List<VariantContext> matchingStart =
@@ -342,11 +398,14 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
             return preProcessedVariants;
         }
     }
+*/
 
-    /**
+
+    /*
      * Re-genotype (and re-annotate) a combined genomic VC
      * @return a new VariantContext or null if the site turned monomorphic and we don't want such sites
-     */
+
+    //move to engine
     private VariantContext regenotypeVC(final VariantContext originalVC, final ReferenceContext ref, final FeatureContext features, boolean includeNonVariants) {
         Utils.nonNull(originalVC);
 
@@ -386,34 +445,38 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         if (result.isPolymorphicInSamples()) {
             // For polymorphic sites we need to make sure e.g. the SB tag is sent to the annotation engine and then removed later.
             final VariantContext reannotated = annotationEngine.annotateContext(result, features, ref, null, a -> true);
-            return new VariantContextBuilder(reannotated).genotypes(cleanupGenotypeAnnotations(reannotated, false)).make();
+            return new VariantContextBuilder(reannotated).genotypes(GenotypeGVCFsEngine.cleanupGenotypeAnnotations(reannotated, false)).make();
         } else if (includeNonVariants) {
             // For monomorphic sites we need to make sure e.g. the hom ref genotypes are created and only then are passed to the annotation engine.
-            VariantContext reannotated = new VariantContextBuilder(result).genotypes(cleanupGenotypeAnnotations(result, true)).make();
+            VariantContext reannotated = new VariantContextBuilder(result).genotypes(GenotypeGVCFsEngine.cleanupGenotypeAnnotations(result, true)).make();
             reannotated = annotationEngine.annotateContext(reannotated, features, ref, null, GenotypeGVCFs::annotationShouldBeSkippedForHomRefSites);
             return removeNonRefAlleles(reannotated);
         } else {
             return null;
         }
     }
+*/
 
+/*
+    //move to engine
     private VariantContext calculateGenotypes(VariantContext vc){
-        /*
+
          * Query the VariantContext for the appropriate model.  If type == MIXED, one would want to use model = BOTH.
          * However GenotypingEngine.getAlleleFrequencyPriors throws an exception if you give it anything but a SNP or INDEL model.
-         */
+
         final GenotypeLikelihoodsCalculationModel model = vc.getType() == VariantContext.Type.INDEL
                 ? GenotypeLikelihoodsCalculationModel.INDEL
                 : GenotypeLikelihoodsCalculationModel.SNP;
         return genotypingEngine.calculateGenotypes(vc, model, null);
     }
-
+         */
     /**
      * Remove NON-REF alleles from the variant context
      *
      * @param vc   the variant context
      * @return variant context with the NON-REF alleles removed if multiallelic or replaced with NO-CALL alleles if biallelic
-     */
+
+    //move to engine
     private VariantContext removeNonRefAlleles(final VariantContext vc) {
 
         // If NON_REF is the only alt allele, ignore this site
@@ -436,7 +499,9 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
             return vc;
         }
     }
-
+    */
+/*
+    //move to engine
     private GenotypesContext subsetAlleleSpecificFormatFields(final VCFHeader outputHeader, final GenotypesContext originalGs, final int[] relevantIndices) {
         final GenotypesContext newGTs = GenotypesContext.create(originalGs.size());
         for (final Genotype g : originalGs) {
@@ -458,11 +523,13 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         }
         return newGTs;
     }
+*/
 
     /**
      * Re-genotype (and re-annotate) a combined genomic VC
      * @return a new VariantContext or null if the site turned monomorphic and we don't want such sites
-     */
+
+    //move to engine
     private VariantContext regenotypeSomaticVC(final VariantContext originalVC, final ReferenceContext ref, final FeatureContext features, boolean includeNonVariants) {
         Utils.nonNull(originalVC);
 
@@ -476,7 +543,7 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         }
         return result;
     }
-
+*/
 
     /**
      * Drop low quality alleles and call genotypes
@@ -484,7 +551,8 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
      *
      * @param vc input VariantContext with no-called genotypes
      * @return a VC with called genotypes and low quality alleles removed, may be null
-     */
+
+    //move to engine
     private VariantContext callSomaticGenotypes(final VariantContext vc) {
         final List<Genotype> newGenotypes = new ArrayList<>();
         final GenotypesContext genotypes = vc.getGenotypes();
@@ -555,23 +623,7 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         }
     }
 
-
-    /**
-     * Determines whether the provided VariantContext has real alternate alleles.
-     *
-     * @param vc  the VariantContext to evaluate
-     * @return true if it has proper alternate alleles, false otherwise
-     */
-    public static boolean isProperlyPolymorphic(final VariantContext vc) {
-        //obvious cases
-        if (vc == null || vc.getAlternateAlleles().isEmpty()) {
-            return false;
-        } else if (vc.isBiallelic()) {
-            return !(GATKVCFConstants.isSpanningDeletion(vc.getAlternateAllele(0)) || vc.isSymbolic());
-        } else {
-            return true;
-        }
-    }
+*/
 
     /**
      * Add genotyping-based annotations to the new VC
@@ -579,7 +631,8 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
      * @param originalAttributes the non-null annotations from the original VC
      * @param newVC the new non-null VC
      * @return a non-null VC
-     */
+
+    //move to engine
     private VariantContext addGenotypingAnnotations(final Map<String, Object> originalAttributes, final VariantContext newVC) {
         // we want to carry forward the attributes from the original VC but make sure to add the MLE-based annotations and any other annotations generated by the genotyper.
         final Map<String, Object> attrs = new LinkedHashMap<>(originalAttributes);
@@ -593,73 +646,10 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         }
         return new VariantContextBuilder(newVC).attributes(attrs).make();
     }
+*/
 
-
-    /**
-     * Cleans up genotype-level annotations that need to be updated.
-     * 1. move MIN_DP to DP if present
-     * 2. propagate DP to AD if not present
-     * 3. remove SB if present
-     * 4. change the PGT value from "0|1" to "1|1" for homozygous variant genotypes
-     * 5. move GQ to RGQ if the site is monomorphic
-     *
-     * @param vc            the VariantContext with the Genotypes to fix
-     * @param createRefGTs  if true we will also create proper hom ref genotypes since we assume the site is monomorphic
-     * @return a new set of Genotypes
-     */
-    @VisibleForTesting
-    static List<Genotype> cleanupGenotypeAnnotations(final VariantContext vc, final boolean createRefGTs) {
-        final GenotypesContext oldGTs = vc.getGenotypes();
-        final List<Genotype> recoveredGs = new ArrayList<>(oldGTs.size());
-        for ( final Genotype oldGT : oldGTs ) {
-            final Map<String, Object> attrs = new HashMap<>(oldGT.getExtendedAttributes());
-
-            final GenotypeBuilder builder = new GenotypeBuilder(oldGT);
-            int depth = oldGT.hasDP() ? oldGT.getDP() : 0;
-
-            // move the MIN_DP to DP
-            if ( oldGT.hasExtendedAttribute(GATKVCFConstants.MIN_DP_FORMAT_KEY) ) {
-                depth = parseInt(oldGT.getAnyAttribute(GATKVCFConstants.MIN_DP_FORMAT_KEY));
-                builder.DP(depth);
-                attrs.remove(GATKVCFConstants.MIN_DP_FORMAT_KEY);
-            }
-
-            attrs.remove(GATKVCFConstants.STRAND_BIAS_BY_SAMPLE_KEY);
-
-            // update PGT for hom vars
-            if ( oldGT.isHomVar() && oldGT.hasExtendedAttribute(GATKVCFConstants.HAPLOTYPE_CALLER_PHASING_GT_KEY) ) {
-                attrs.put(GATKVCFConstants.HAPLOTYPE_CALLER_PHASING_GT_KEY, PHASED_HOM_VAR_STRING);
-            }
-
-            // create AD if it's not there
-            if ( !oldGT.hasAD() && vc.isVariant() ) {
-                final int[] AD = new int[vc.getNAlleles()];
-                AD[0] = depth;
-                builder.AD(AD);
-            }
-
-            if ( createRefGTs ) {
-                // move the GQ to RGQ
-                if (oldGT.hasGQ()) {
-                    builder.noGQ();
-                    attrs.put(GATKVCFConstants.REFERENCE_GENOTYPE_QUALITY, oldGT.getGQ());
-                }
-
-                //keep 0 depth samples and 0 GQ samples as no-call
-                if (depth > 0 && oldGT.hasGQ() && oldGT.getGQ() > 0) {
-                    final List<Allele> refAlleles = Collections.nCopies(oldGT.getPloidy(), vc.getReference());
-                    builder.alleles(refAlleles);
-                }
-
-                // also, the PLs are technically no longer usable
-                builder.noPL();
-            }
-
-            recoveredGs.add(builder.noAttributes().attributes(attrs).make());
-        }
-        return recoveredGs;
-    }
-
+    /*
+    //dont move
     private static int parseInt(Object attribute){
         if( attribute instanceof String) {
             return Integer.parseInt((String)attribute);
@@ -669,11 +659,12 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
             throw new IllegalArgumentException("Expected a Number or a String but found something else.");
         }
     }
-
+*/
     /**
      * Creates a UnifiedArgumentCollection with appropriate values filled in from the arguments in this walker
      * @return a complete UnifiedArgumentCollection
-     */
+
+    //dont move for now
     private UnifiedArgumentCollection createUAC() {
         final UnifiedArgumentCollection uac = new UnifiedArgumentCollection();
         uac.genotypeArgs = new GenotypeCalculationArgumentCollection(genotypeArgs);
@@ -684,6 +675,7 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         uac.outputMode = includeNonVariants ? OutputMode.EMIT_ALL_SITES : OutputMode.EMIT_VARIANTS_ONLY;
         return uac;
     }
+*/
 
     @Override
     public void closeTool() {
