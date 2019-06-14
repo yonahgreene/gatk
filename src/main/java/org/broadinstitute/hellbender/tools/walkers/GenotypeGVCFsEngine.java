@@ -2,25 +2,18 @@ package org.broadinstitute.hellbender.tools.walkers;
 
 
 import com.google.common.annotations.VisibleForTesting;
-import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.util.Locatable;
 import htsjdk.variant.variantcontext.*;
 import htsjdk.variant.variantcontext.writer.VariantContextWriter;
 import htsjdk.variant.vcf.*;
-import org.broadinstitute.barclay.argparser.*;
-import org.broadinstitute.barclay.help.DocumentedFeature;
-import org.broadinstitute.hellbender.cmdline.*;
 import org.broadinstitute.hellbender.cmdline.argumentcollections.DbsnpArgumentCollection;
-import org.broadinstitute.hellbender.cmdline.programgroups.ShortVariantDiscoveryProgramGroup;
-import org.broadinstitute.hellbender.engine.*;
-import org.broadinstitute.hellbender.tools.genomicsdb.GenomicsDBImport;
+import org.broadinstitute.hellbender.engine.FeatureContext;
+import org.broadinstitute.hellbender.engine.ReferenceContext;
 import org.broadinstitute.hellbender.tools.walkers.annotator.*;
 import org.broadinstitute.hellbender.tools.walkers.annotator.allelespecific.AS_RMSMappingQuality;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.*;
 import org.broadinstitute.hellbender.tools.walkers.genotyper.afcalc.GeneralPloidyFailOverAFCalculatorProvider;
-import org.broadinstitute.hellbender.tools.walkers.mutect.M2ArgumentCollection;
 import org.broadinstitute.hellbender.utils.GATKProtectedVariantContextUtils;
-import org.broadinstitute.hellbender.utils.IntervalUtils;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.Utils;
 import org.broadinstitute.hellbender.utils.genotyper.IndexedSampleList;
@@ -29,27 +22,20 @@ import org.broadinstitute.hellbender.utils.variant.GATKVCFConstants;
 import org.broadinstitute.hellbender.utils.variant.GATKVCFHeaderLines;
 import org.broadinstitute.hellbender.utils.variant.GATKVariantContextUtils;
 
-
 import java.util.*;
 import java.util.stream.Collectors;
 
-
-
-import htsjdk.variant.vcf.VCFConstants;
-import htsjdk.variant.vcf.VCFHeader;
-import htsjdk.variant.vcf.VCFHeaderLine;
-import htsjdk.variant.vcf.VCFStandardHeaderLines;
-
 public class GenotypeGVCFsEngine
 {
-    //Instance variables
-
     private static final String GVCF_BLOCK = "GVCFBlock";
 
+    //the annotation engine
     private VariantAnnotatorEngine annotationEngine;
 
+    //the genotyping engine
     private GenotypingEngine<?> genotypingEngine;
 
+    // the INFO field annotation key names to remove
     private final List<String> infoFieldAnnotationKeyNamesToRemove = new ArrayList<>();
 
     private GenotypeCalculationArgumentCollection genotypeArgs;
@@ -61,8 +47,6 @@ public class GenotypeGVCFsEngine
 
     private VCFHeader outputHeader;
 
-
-    //constructor
     public GenotypeGVCFsEngine(VariantAnnotatorEngine annotationEngine, GenotypeCalculationArgumentCollection genotypeArgs, boolean includeNonVariants)
     {
         this.annotationEngine = annotationEngine;
@@ -70,7 +54,6 @@ public class GenotypeGVCFsEngine
         this.includeNonVariants = includeNonVariants;
     }
 
-    //methods
     public VariantContextWriter initialize(VCFHeader inputVCFHeader, Set<VCFHeaderLine> defaultToolVCFHeaderLines, boolean keepCombined, DbsnpArgumentCollection dbsnp, VariantContextWriter vcfWriter) //do work for onTraversalStart
     {
         final SampleList samples = new IndexedSampleList(inputVCFHeader.getGenotypeSamples()); //todo should this be getSampleNamesInOrder?
@@ -105,7 +88,7 @@ public class GenotypeGVCFsEngine
 
     }
 
-    public VariantContext callRegion(List<SimpleInterval> intervals, Locatable loc, List<VariantContext> variants, ReferenceContext ref, FeatureContext features, ReferenceConfidenceVariantContextMerger merger, boolean somaticInput, double tlodThreshold, double afTolerance) //do work for apply
+    public VariantContext callRegion(Locatable loc, List<VariantContext> variants, ReferenceContext ref, FeatureContext features, ReferenceConfidenceVariantContextMerger merger, boolean somaticInput, double tlodThreshold, double afTolerance) //do work for apply
     {
         final List<VariantContext> variantsToProcess = getVariantSubsetToProcess(loc, variants);
 
@@ -114,19 +97,14 @@ public class GenotypeGVCFsEngine
         final VariantContext regenotypedVC = somaticInput ? regenotypeSomaticVC(mergedVC, ref, features, includeNonVariants, tlodThreshold, afTolerance) :
                 regenotypeVC(mergedVC, ref, features, includeNonVariants);
 
-
-
-
-
         return regenotypedVC;
     }
 
 
-    /*
+    /**
      * Re-genotype (and re-annotate) a combined genomic VC
      * @return a new VariantContext or null if the site turned monomorphic and we don't want such sites
      */
-    //move to engine
     private VariantContext regenotypeVC(final VariantContext originalVC, final ReferenceContext ref, final FeatureContext features, boolean includeNonVariants) {
         Utils.nonNull(originalVC);
 
@@ -183,7 +161,6 @@ public class GenotypeGVCFsEngine
      * @param vc   the variant context
      * @return variant context with the NON-REF alleles removed if multiallelic or replaced with NO-CALL alleles if biallelic
      */
-    //move to engine
     private VariantContext removeNonRefAlleles(final VariantContext vc) {
 
         // If NON_REF is the only alt allele, ignore this site
@@ -207,12 +184,10 @@ public class GenotypeGVCFsEngine
         }
     }
 
-    //move
     private static boolean annotationShouldBeSkippedForHomRefSites(VariantAnnotation annotation) {
         return annotation instanceof RankSumTest || annotation instanceof RMSMappingQuality || annotation instanceof AS_RMSMappingQuality;
     }
 
-    //move to engine
     private GenotypesContext subsetAlleleSpecificFormatFields(final VCFHeader outputHeader, final GenotypesContext originalGs, final int[] relevantIndices) {
         final GenotypesContext newGTs = GenotypesContext.create(originalGs.size());
         for (final Genotype g : originalGs) {
@@ -242,7 +217,6 @@ public class GenotypeGVCFsEngine
      * @param newVC the new non-null VC
      * @return a non-null VC
      */
-    //move to engine
     private VariantContext addGenotypingAnnotations(final Map<String, Object> originalAttributes, final VariantContext newVC) {
         // we want to carry forward the attributes from the original VC but make sure to add the MLE-based annotations and any other annotations generated by the genotyper.
         final Map<String, Object> attrs = new LinkedHashMap<>(originalAttributes);
@@ -257,7 +231,6 @@ public class GenotypeGVCFsEngine
         return new VariantContextBuilder(newVC).attributes(attrs).make();
     }
 
-    //move to engine
     private VariantContext calculateGenotypes(VariantContext vc){
         /*
          * Query the VariantContext for the appropriate model.  If type == MIXED, one would want to use model = BOTH.
@@ -273,7 +246,6 @@ public class GenotypeGVCFsEngine
      * Re-genotype (and re-annotate) a combined genomic VC
      * @return a new VariantContext or null if the site turned monomorphic and we don't want such sites
      */
-    //move to engine
     private VariantContext regenotypeSomaticVC(final VariantContext originalVC, final ReferenceContext ref, final FeatureContext features, boolean includeNonVariants, double tlodThreshold, double afTolerance) {
         Utils.nonNull(originalVC);
 
@@ -295,7 +267,6 @@ public class GenotypeGVCFsEngine
      * @param vc input VariantContext with no-called genotypes
      * @return a VC with called genotypes and low quality alleles removed, may be null
      */
-    //move to engine
     private VariantContext callSomaticGenotypes(final VariantContext vc, double tlodThreshold, double afTolerance) {
         final List<Genotype> newGenotypes = new ArrayList<>();
         final GenotypesContext genotypes = vc.getGenotypes();
@@ -372,7 +343,6 @@ public class GenotypeGVCFsEngine
      * @param vc  the VariantContext to evaluate
      * @return true if it has proper alternate alleles, false otherwise
      */
-    //Used in Test - don't move????
     public static boolean isProperlyPolymorphic(final VariantContext vc) {
         //obvious cases
         if (vc == null || vc.getAlternateAlleles().isEmpty()) {
@@ -388,7 +358,6 @@ public class GenotypeGVCFsEngine
     // If includeNonVariants is set, we're using group-by-locus traversal. To match GATK3 GenotypeGVCFs,
     // see if there is a variant in the overlapping group that starts exactly at the locus start position, and if so
     // prioritize and process only that variant. Otherwise process all of the overlapping variants.
-    //move to engine
     private List<VariantContext> getVariantSubsetToProcess(final Locatable loc, List<VariantContext> preProcessedVariants) {
         if (includeNonVariants) {
             final List<VariantContext> matchingStart =
@@ -447,9 +416,6 @@ public class GenotypeGVCFsEngine
             VCFStandardHeaderLines.addStandardInfoLines(headerLines, true, VCFConstants.DBSNP_KEY);
         }
 
-        //createVCFWriter() is a public GATKTool - must be called in regular caller file, and then passed as arg
-        //VariantContextWriter vcfWriter = createVCFWriter(outputFile);
-
         final Set<String> sampleNameSet = samples.asSetOfSamples();
         outputHeader = new VCFHeader(headerLines, new TreeSet<>(sampleNameSet));
         vcfWriter.writeHeader(outputHeader);
@@ -470,7 +436,6 @@ public class GenotypeGVCFsEngine
      * @param createRefGTs  if true we will also create proper hom ref genotypes since we assume the site is monomorphic
      * @return a new set of Genotypes
      */
-    //used in tests - dont move
     @VisibleForTesting
     static List<Genotype> cleanupGenotypeAnnotations(final VariantContext vc, final boolean createRefGTs) {
         final GenotypesContext oldGTs = vc.getGenotypes();
@@ -525,7 +490,6 @@ public class GenotypeGVCFsEngine
     }
 
 
-    //dont move
     private static int parseInt(Object attribute){
         if( attribute instanceof String) {
             return Integer.parseInt((String)attribute);
@@ -535,6 +499,4 @@ public class GenotypeGVCFsEngine
             throw new IllegalArgumentException("Expected a Number or a String but found something else.");
         }
     }
-
-
 }
