@@ -234,10 +234,10 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
         vcfWriter = createVCFWriter(outputFile);
 
         //create engine object
-        gvcfEngine = new GenotypeGVCFsEngine(annotationEngine, genotypeArgs, includeNonVariants);
+        gvcfEngine = new GenotypeGVCFsEngine(annotationEngine, genotypeArgs, includeNonVariants, inputVCFHeader);
 
         //call initialize method in engine class that creates VCFWriter object and writes a header to it
-        vcfWriter = gvcfEngine.initialize(inputVCFHeader, defaultToolVCFHeaderLines, keepCombined, dbsnp, vcfWriter);
+        vcfWriter = gvcfEngine.setupVCFWriter(defaultToolVCFHeaderLines, keepCombined, dbsnp, vcfWriter);
 
     }
 

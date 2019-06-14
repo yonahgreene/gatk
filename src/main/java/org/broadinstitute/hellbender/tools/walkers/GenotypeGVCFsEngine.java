@@ -25,15 +25,24 @@ import org.broadinstitute.hellbender.utils.variant.GATKVariantContextUtils;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * the core engine for the GenotypeGVCF that does all of the actual work of the tool
+ *
+ * Usage:
+ * -Pass the genotype args into the constructor, which will the initialize the engine completely
+ * Get the appropriate writer and write the appropriate header via {@link #setupVCFWriter}
+ * Repeatedly call {@link #callRegion} to call variants in each region, and add them to your writer
+ */
+
 public class GenotypeGVCFsEngine
 {
     private static final String GVCF_BLOCK = "GVCFBlock";
 
     //the annotation engine
-    private VariantAnnotatorEngine annotationEngine;
+    private VariantAnnotatorEngine annotationEngine = null;
 
     //the genotyping engine
-    private GenotypingEngine<?> genotypingEngine;
+    private GenotypingEngine<?> genotypingEngine = null;
 
     // the INFO field annotation key names to remove
     private final List<String> infoFieldAnnotationKeyNamesToRemove = new ArrayList<>();
@@ -47,16 +56,30 @@ public class GenotypeGVCFsEngine
 
     private VCFHeader outputHeader;
 
-    public GenotypeGVCFsEngine(VariantAnnotatorEngine annotationEngine, GenotypeCalculationArgumentCollection genotypeArgs, boolean includeNonVariants)
+    private SampleList samples;
+
+    final VCFHeader inputVCFHeader;
+
+    /**
+     * Create and initialize a new GenotypeGVCFsEngine given a collection of GenotypeGVCF arguments and a VCF header
+     *
+     * @param annotationEngine variantAnnotatorEngine with annotations to process already added
+     * @param genotypeArgs command-line arguments for the GenotypeGVCFs caller
+     * @param includeNonVariants true to save INFO header names that require alt alleles
+     * @param inputVCFHeader header for the VCF
+     */
+    public GenotypeGVCFsEngine(VariantAnnotatorEngine annotationEngine, GenotypeCalculationArgumentCollection genotypeArgs, boolean includeNonVariants, VCFHeader inputVCFHeader)
     {
         this.annotationEngine = annotationEngine;
         this.genotypeArgs = genotypeArgs;
         this.includeNonVariants = includeNonVariants;
+        this.inputVCFHeader = inputVCFHeader;
+        initialize();
     }
 
-    public VariantContextWriter initialize(VCFHeader inputVCFHeader, Set<VCFHeaderLine> defaultToolVCFHeaderLines, boolean keepCombined, DbsnpArgumentCollection dbsnp, VariantContextWriter vcfWriter) //do work for onTraversalStart
+    private void initialize()
     {
-        final SampleList samples = new IndexedSampleList(inputVCFHeader.getGenotypeSamples()); //todo should this be getSampleNamesInOrder?
+        samples = new IndexedSampleList(inputVCFHeader.getGenotypeSamples()); //todo should this be getSampleNamesInOrder?
 
         // Request INFO field annotations inheriting from RankSumTest and RMSAnnotation added to remove list
         for ( final InfoFieldAnnotation annotation :  annotationEngine.getInfoAnnotations() ) {
@@ -83,9 +106,6 @@ public class GenotypeGVCFsEngine
                 }
             }
         }
-
-        return setupVCFWriter(inputVCFHeader, samples, defaultToolVCFHeaderLines, keepCombined, dbsnp, vcfWriter);
-
     }
 
     public VariantContext callRegion(Locatable loc, List<VariantContext> variants, ReferenceContext ref, FeatureContext features, ReferenceConfidenceVariantContextMerger merger, boolean somaticInput, double tlodThreshold, double afTolerance) //do work for apply
@@ -394,7 +414,14 @@ public class GenotypeGVCFsEngine
         return uac;
     }
 
-    private VariantContextWriter setupVCFWriter(final VCFHeader inputVCFHeader, final SampleList samples, Set<VCFHeaderLine> defaultToolVCFHeaderLines, boolean keepCombined, DbsnpArgumentCollection dbsnp, VariantContextWriter vcfWriter) {
+    /**
+     * Create a VCF header in the writer
+     *
+     * @param vcfWriter
+     * @return a VCF writer
+
+     */
+    public VariantContextWriter setupVCFWriter(Set<VCFHeaderLine> defaultToolVCFHeaderLines, boolean keepCombined, DbsnpArgumentCollection dbsnp, VariantContextWriter vcfWriter) {
         final Set<VCFHeaderLine> headerLines = new LinkedHashSet<>(inputVCFHeader.getMetaDataInInputOrder());
         headerLines.addAll(defaultToolVCFHeaderLines);
 
