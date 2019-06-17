@@ -26,7 +26,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * the core engine for the GenotypeGVCF that does all of the actual work of the tool
+ * Engine class to allow for other classes to replicate the behavior of GenotypeGVCFs. See {@link GenotypeGVCFs} for details
  *
  * Usage:
  * -Pass the genotype args into the constructor, which will the initialize the engine completely

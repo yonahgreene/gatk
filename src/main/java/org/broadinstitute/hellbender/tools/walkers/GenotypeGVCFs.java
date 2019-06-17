@@ -170,7 +170,6 @@ public final class GenotypeGVCFs extends VariantLocusWalker {
     private VariantContextWriter vcfWriter;
 
     /** these are used when {@link #onlyOutputCallsStartingInIntervals) is true */
-    //pass in to callRegion() in engine
     private List<SimpleInterval> intervals;
 
     private GenotypeGVCFsEngine gvcfEngine;
