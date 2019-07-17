@@ -11,12 +11,12 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.BetaFeature;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
-import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.cmdline.programgroups.LongReadAnalysisProgramGroup;
 import org.broadinstitute.hellbender.engine.filters.ReadFilter;
 import org.broadinstitute.hellbender.engine.spark.GATKSparkTool;
 import org.broadinstitute.hellbender.utils.read.GATKRead;
 
+import java.util.HashSet;
 import java.util.List;
 
 /**
@@ -56,9 +56,11 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
         return true;
     }
 
-    public static final String NEIGHBOR_INSDEL_OP = "XG";
-    public static final String NEIGHBOR_CLIPGAP_OP = "XS";
-    public static final String SEMI_NEIGHBOR_INSDEL_OP = "XC";
+    public static final String NEIGHBOR_INSDEL_OP = "YG";
+    public static final String NEIGHBOR_CLIPGAP_OP = "YS";
+    public static final String SEMI_NEIGHBOR_INSDEL_OP = "YC";
+
+    static final int ALIGNMENT_TOO_SHORT_ABSOLUTE_THRESHOLD = 3;
 
     @Argument(doc = "for CIGARs that have closely neighbored gaps separated only by a small alignment block, " +
             "the triggering threshold below which fraction of the alignment size to the size of the smaller gaps",
@@ -66,10 +68,13 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
             optional = true)
     private Double fraction = 0.1;
 
-    @Argument(doc = "uri for the output file",
-            shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME, fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME)
-    private String output;
+    @Argument(doc = "uri for the output bam keeping the alignments whose CIGARs are considered strange",
+            shortName = "s", fullName = "strange")
+    private String strangeOut;
 
+    @Argument(doc = "uri for the output bam keeping the alignments whose CIGARs are not considered strange",
+            shortName = "k", fullName = "keep")
+    private String normalOut;
 
     @Override
     protected void runTool( final JavaSparkContext ctx ) {
@@ -78,36 +83,49 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
         final NonAlnNeighboringClip catchNonAlnNeighboringClip = new NonAlnNeighboringClip();
         final CloselyNeighboringGaps closelyNeighboringGaps = new CloselyNeighboringGaps(fraction);
 
-        final JavaRDD<GATKRead> strangeCigaredReads =
-                getReads()
-                        .filter(r -> !r.isUnmapped())
-                        .map(read -> {
-                            GATKRead copy = read.copy();
-                           if (catchNonAlnNeighboringClip.test(read)) {
-                                copy.setAttribute(NEIGHBOR_CLIPGAP_OP, 1);
-                            } else if (catchDelNeighboringIns.test(read)) {
-                               copy.setAttribute(NEIGHBOR_INSDEL_OP,
-                                                 catchDelNeighboringIns.getOffendingBlocks(read));
-                           } else if (closelyNeighboringGaps.test(read)) {
-                                copy.setAttribute(SEMI_NEIGHBOR_INSDEL_OP,
-                                                  closelyNeighboringGaps.getOffendingBlocks(read));
-                            }
-                            return copy;
-                        })
-                        .filter(read ->
-                            read.hasAttribute(NEIGHBOR_INSDEL_OP)
-                                    || read.hasAttribute(NEIGHBOR_CLIPGAP_OP)
-                                    || read.hasAttribute(SEMI_NEIGHBOR_INSDEL_OP)
-                        );
-        writeReads(ctx, output, strangeCigaredReads, getHeaderForReads(), true);
+        final JavaRDD<GATKRead> allReads = getReads().cache();
+        final JavaRDD<GATKRead> annotatedReads = allReads
+                .filter(r -> !r.isUnmapped())
+                .map(read -> {
+                    GATKRead copy = read.copy();
+                    if (catchNonAlnNeighboringClip.test(read)) {
+                        copy.setAttribute(NEIGHBOR_CLIPGAP_OP, 1);
+                    } else if (catchDelNeighboringIns.test(read)) {
+                        copy.setAttribute(NEIGHBOR_INSDEL_OP,
+                                catchDelNeighboringIns.getOffendingBlocks(read));
+                    } else if (closelyNeighboringGaps.test(read)) {
+                        copy.setAttribute(SEMI_NEIGHBOR_INSDEL_OP,
+                                closelyNeighboringGaps.getOffendingBlocks(read));
+                    }
+                    return copy;
+                }).cache();
+        final JavaRDD<GATKRead> unmappedReads = allReads.filter(GATKRead::isUnmapped).cache();
+        allReads.unpersist(false);
+
+        final JavaRDD<GATKRead> strangeCigaredReads = annotatedReads
+                .filter(read ->
+                        read.hasAttribute(NEIGHBOR_INSDEL_OP)
+                                || read.hasAttribute(NEIGHBOR_CLIPGAP_OP)
+                                || read.hasAttribute(SEMI_NEIGHBOR_INSDEL_OP)
+                );
+        writeReads(ctx, strangeOut, strangeCigaredReads, getHeaderForReads(), true);
+        localLogger.warn(String.format("Total number of strange alignment records: %d", strangeCigaredReads.count()));
 
         final long countOfNeighboringIndel = strangeCigaredReads.filter(read -> read.hasAttribute(NEIGHBOR_INSDEL_OP)).count();
         final long countOfClippingNeighboringIndel = strangeCigaredReads.filter(read -> read.hasAttribute(NEIGHBOR_CLIPGAP_OP)).count();
         final long countOfCloselyNeighboredIndel = strangeCigaredReads.filter(read -> read.hasAttribute(SEMI_NEIGHBOR_INSDEL_OP)).count();
-        String message  = String.format("The input alignments has %d records with neighboring indel operations\n", countOfNeighboringIndel);
-               message += String.format("                         %d records with clipping neighboring an indel\n", countOfClippingNeighboringIndel);
-               message += String.format("                         %d records with small alignment sandwiched between large indels", countOfCloselyNeighboredIndel);
+        String message  = "The input alignments has \n";
+               message += String.format("  %d records with neighboring indel operations\n", countOfNeighboringIndel);
+               message += String.format("  %d records with clipping neighboring an indel\n", countOfClippingNeighboringIndel);
+               message += String.format("  %d records with small alignment sandwiched between large indels", countOfCloselyNeighboredIndel);
         localLogger.info(message);
+
+        final List<String> collect = strangeCigaredReads.map(GATKRead::getName).collect();
+        final HashSet<String> readNamesToDrop = new HashSet<>(collect);
+        final JavaRDD<GATKRead> normalCigaredReads = annotatedReads.filter(read -> !readNamesToDrop.contains(read.getName()));
+        final JavaRDD<GATKRead> kept = normalCigaredReads.union(unmappedReads);
+        writeReads(ctx, normalOut, kept, getHeaderForReads(), true);
+        localLogger.warn(String.format("Total number of normal alignment records: %d", kept.count()));
     }
 
     /**
@@ -116,7 +134,7 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
      *
      * Note: read is assumed to be mapped. Will throw if not.
      */
-    private static final class DelNeighboringIns extends ReadFilter {
+    static final class DelNeighboringIns extends ReadFilter {
         private static final long serialVersionUID = 1L;
 
         @Override
@@ -163,7 +181,7 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
      *
      * Note: read is assumed to be mapped. Will throw if not.
      */
-    private static final class NonAlnNeighboringClip extends ReadFilter {
+    static final class NonAlnNeighboringClip extends ReadFilter {
         private static final long serialVersionUID = 1L;
 
         @Override
@@ -214,7 +232,7 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
      *
      * Note: read is assumed to be mapped. Will throw if not.
      */
-    private static final class CloselyNeighboringGaps extends ReadFilter {
+    static final class CloselyNeighboringGaps extends ReadFilter {
         private static final long serialVersionUID = 1L;
 
         private final Double fraction;
@@ -233,15 +251,23 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
                 final CigarElement currentElement   = cigarElements.get(i);
                 final CigarElement nextElement      = cigarElements.get(i + 1);
 
-                if (precedingElement.getOperator().isIndel()
-                        && nextElement.getOperator().isIndel()
-                        && currentElement.getOperator().isAlignment()) {
-                    final double threshold = Math.min(precedingElement.getLength(), nextElement.getLength()) * fraction;
+                if (badSandwich(precedingElement, currentElement, nextElement))
+                    return true;
+            }
+            return false;
+        }
 
-                    if( currentElement.getLength() < 3 || currentElement.getLength() < threshold ) {
-                        return true;
-                    }
-                }
+        private boolean badSandwich(final CigarElement precedingElement,
+                                    final CigarElement currentElement,
+                                    final CigarElement nextElement) {
+            if (precedingElement.getOperator().isIndel()
+                    && nextElement.getOperator().isIndel()
+                    && currentElement.getOperator().isAlignment()) {
+
+                final long threshold = Math.round( Math.min(precedingElement.getLength(), nextElement.getLength()) * fraction );
+
+                return currentElement.getLength() < ALIGNMENT_TOO_SHORT_ABSOLUTE_THRESHOLD
+                        || currentElement.getLength() < threshold;
             }
             return false;
         }
@@ -256,17 +282,11 @@ public class ExtractAlignmentsWithStrangeCigarSpark extends GATKSparkTool {
                 final CigarElement currentElement   = cigarElements.get(i);
                 final CigarElement nextElement      = cigarElements.get(i + 1);
 
-                if (precedingElement.getOperator().isIndel()
-                        && nextElement.getOperator().isIndel()
-                        && currentElement.getOperator().isAlignment()) {
-                    final double threshold = Math.min(precedingElement.getLength(), nextElement.getLength()) * fraction;
-
-                    if( currentElement.getLength() < 3 || currentElement.getLength() < threshold ) {
-                        attribute.append(precedingElement.toString());
-                        attribute.append(currentElement.toString());
-                        attribute.append(nextElement.toString());
-                        attribute.append(",");
-                    }
+                if ( badSandwich(precedingElement, currentElement, nextElement) ) {
+                    attribute.append(precedingElement.toString())
+                             .append(currentElement.toString())
+                             .append(nextElement.toString())
+                             .append(",");
                 }
             }
 
