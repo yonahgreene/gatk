@@ -24,7 +24,7 @@ import org.broadinstitute.hellbender.utils.fasta.CachingIndexedFastaSequenceFile
 import org.broadinstitute.hellbender.utils.fragments.FragmentCollection;
 import org.broadinstitute.hellbender.utils.fragments.FragmentUtils;
 import org.broadinstitute.hellbender.utils.genotyper.IndexedAlleleList;
-import org.broadinstitute.hellbender.utils.genotyper.LinkedReadsLikelihoods;
+import org.broadinstitute.hellbender.utils.genotyper.AlleleLikelihoods;
 import org.broadinstitute.hellbender.utils.genotyper.ReadLikelihoods;
 import org.broadinstitute.hellbender.utils.genotyper.SampleList;
 import org.broadinstitute.hellbender.utils.haplotype.Haplotype;
@@ -409,13 +409,13 @@ public final class AssemblyBasedCallerUtils {
     }
 
     public static void annotateReadLikelihoodsWithSupportedAlleles(final VariantContext vc,
-                                                                   final LinkedReadsLikelihoods<Fragment, Allele> likelihoodsAllele) {
+                                                                   final AlleleLikelihoods<Fragment, Allele> likelihoodsAllele) {
         //assign supported alleles to each read
         final Map<Allele, List<Allele>> alleleSubset = vc.getAlleles().stream().collect(Collectors.toMap(a -> a, Arrays::asList));
-        final LinkedReadsLikelihoods<Fragment, Allele> subsettedLikelihoods = likelihoodsAllele.marginalize(alleleSubset);
-        final Collection<LinkedReadsLikelihoods<Fragment, Allele>.BestAllele> bestAlleles = subsettedLikelihoods.bestAllelesBreakingTies().stream()
+        final AlleleLikelihoods<Fragment, Allele> subsettedLikelihoods = likelihoodsAllele.marginalize(alleleSubset);
+        final Collection<AlleleLikelihoods<Fragment, Allele>.BestAllele> bestAlleles = subsettedLikelihoods.bestAllelesBreakingTies().stream()
                 .filter(ba -> ba.isInformative()).collect(Collectors.toList());
-        for (LinkedReadsLikelihoods<Fragment, Allele>.BestAllele bestAllele : bestAlleles) {
+        for (AlleleLikelihoods<Fragment, Allele>.BestAllele bestAllele : bestAlleles) {
             final Fragment fragment = bestAllele.read;
             final Allele allele = bestAllele.allele;
             for (final GATKRead read : fragment.getReads()) {

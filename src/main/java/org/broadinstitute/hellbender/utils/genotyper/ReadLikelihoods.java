@@ -29,7 +29,7 @@ import java.util.stream.Stream;
  *
  * @author Valentin Ruano-Rubio &lt;valentin@broadinstitute.org&gt;
  */
-public class ReadLikelihoods<A extends Allele> extends LinkedReadsLikelihoods<GATKRead, A> {
+public class ReadLikelihoods<A extends Allele> extends AlleleLikelihoods<GATKRead, A> {
     /**
      * Constructs a new read-likelihood collection.
      *
@@ -139,7 +139,7 @@ public class ReadLikelihoods<A extends Allele> extends LinkedReadsLikelihoods<GA
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public LinkedReadsLikelihoods<Fragment, A> combineMates() {
+    public AlleleLikelihoods<Fragment, A> combineMates() {
         final int sampleCount = samples.numberOfSamples();
         final double[][][] newLikelihoodValues = new double[sampleCount][][];
         final int alleleCount = alleles.numberOfAlleles();
@@ -184,7 +184,7 @@ public class ReadLikelihoods<A extends Allele> extends LinkedReadsLikelihoods<GA
         }
 
         // Finally we create the new read-likelihood
-        return new LinkedReadsLikelihoods<Fragment, A>(
+        return new AlleleLikelihoods<Fragment, A>(
                 alleles,
                 samples,
                 fragmentsBySampleIndex,
@@ -232,9 +232,9 @@ public class ReadLikelihoods<A extends Allele> extends LinkedReadsLikelihoods<GA
         return result;
     }
 
-    public ReadLikelihoods(final LinkedReadsLikelihoods<GATKRead, A> linkedReadsLikelihoods) {
-        this(linkedReadsLikelihoods.alleles, linkedReadsLikelihoods.samples, linkedReadsLikelihoods.readsBySampleIndex,
-                linkedReadsLikelihoods.readIndexBySampleIndex, linkedReadsLikelihoods.valuesBySampleIndex);
+    public ReadLikelihoods(final AlleleLikelihoods<GATKRead, A> alleleLikelihoods) {
+        this(alleleLikelihoods.alleles, alleleLikelihoods.samples, alleleLikelihoods.readsBySampleIndex,
+                alleleLikelihoods.readIndexBySampleIndex, alleleLikelihoods.valuesBySampleIndex);
     }
 
     @Override
