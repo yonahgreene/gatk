@@ -88,7 +88,7 @@ public class SomaticGenotypingEngine {
         // if we're ignoring pairing, give 1st and 2nd of pair different names
         if (MTAC.disregardReadPairing) {
             for (int s = 0; s < logReadLikelihoods.numberOfSamples(); s++) {
-                logReadLikelihoods.sampleReads(s).forEach(read -> read.setName(read.getName() + (read.isFirstOfPair() ? "1" : "2")));
+                logReadLikelihoods.sampleEvidence(s).forEach(read -> read.setName(read.getName() + (read.isFirstOfPair() ? "1" : "2")));
             }
         }
 
@@ -239,7 +239,7 @@ public class SomaticGenotypingEngine {
         if (logMatrix.alleles().contains(Allele.NON_REF_ALLELE) && !(logMatrix.alleles().get(alleleListEnd).equals(Allele.NON_REF_ALLELE))) {
             throw new IllegalStateException("<NON_REF> must be last in the allele list.");
         }
-        final double logEvidenceWithAllAlleles = logMatrix.numberOfReads() == 0 ? 0 :
+        final double logEvidenceWithAllAlleles = logMatrix.evidenceCount() == 0 ? 0 :
                 SomaticLikelihoodsEngine.logEvidence(getAsRealMatrix(logMatrix), MTAC.minAF, nonRefIndex);
 
         final PerAlleleCollection<Double> lods = new PerAlleleCollection<>(PerAlleleCollection.Type.ALT_ONLY);
@@ -247,7 +247,7 @@ public class SomaticGenotypingEngine {
         IntStream.range(0, logMatrix.numberOfAlleles()).filter(a -> a != refIndex).forEach( a -> {
             final Allele allele = logMatrix.getAllele(a);
             final LikelihoodMatrix<EVIDENCE, Allele> logMatrixWithoutThisAllele = SubsettedLikelihoodMatrix.excludingAllele(logMatrix, allele);
-            final double logEvidenceWithoutThisAllele = logMatrixWithoutThisAllele.numberOfReads() == 0 ? 0 :
+            final double logEvidenceWithoutThisAllele = logMatrixWithoutThisAllele.evidenceCount() == 0 ? 0 :
                     SomaticLikelihoodsEngine.logEvidence(getAsRealMatrix(logMatrixWithoutThisAllele), MTAC.minAF, logMatrixWithoutThisAllele.numberOfAlleles() > 1 ? nonRefIndex-1 : -1);  //nonRefIndex-1 because we're evaluating without one allele; if th
             lods.setAlt(allele, logEvidenceWithAllAlleles - logEvidenceWithoutThisAllele);
         });
@@ -262,7 +262,7 @@ public class SomaticGenotypingEngine {
             final LikelihoodMatrix<EVIDENCE, Allele> logMatrix = new SubsettedLikelihoodMatrix<>(logLikelihoods.sampleMatrix(n), allelesToEmit);
             final double[] alleleCounts = getEffectiveCounts(logMatrix);
             final double[] flatPriorPseudocounts = new IndexRange(0, logMatrix.numberOfAlleles()).mapToDouble(a -> 1);
-            final double[] alleleFractionsPosterior = logMatrix.numberOfReads() == 0 ? flatPriorPseudocounts :
+            final double[] alleleFractionsPosterior = logMatrix.evidenceCount() == 0 ? flatPriorPseudocounts :
                     SomaticLikelihoodsEngine.alleleFractionsPosterior(getAsRealMatrix(logMatrix), flatPriorPseudocounts);
             final double[] tumorAlleleFractionsMean = MathUtils.normalizeFromRealSpace(alleleFractionsPosterior);
 
@@ -278,7 +278,7 @@ public class SomaticGenotypingEngine {
     }
 
     private static <EVIDENCE> double[] getEffectiveCounts(final LikelihoodMatrix<EVIDENCE, Allele> logLikelihoodMatrix) {
-        if (logLikelihoodMatrix.numberOfReads() == 0) {
+        if (logLikelihoodMatrix.evidenceCount() == 0) {
             return new double[logLikelihoodMatrix.numberOfAlleles()]; // zero counts for each allele
         }
         final RealMatrix logLikelihoods = getAsRealMatrix(logLikelihoodMatrix);
@@ -294,7 +294,7 @@ public class SomaticGenotypingEngine {
      */
     private <EVIDENCE extends Locatable> PerAlleleCollection<Double> diploidAltLogOdds(final LikelihoodMatrix<EVIDENCE, Allele> matrix) {
         final int refIndex = getRefIndex(matrix);
-        final int numReads = matrix.numberOfReads();
+        final int numReads = matrix.evidenceCount();
         final double homRefLogLikelihood = new IndexRange(0, numReads).sum(r -> matrix.get(refIndex,r));
 
         final PerAlleleCollection<Double> result = new PerAlleleCollection<>(PerAlleleCollection.Type.ALT_ONLY);
@@ -316,7 +316,7 @@ public class SomaticGenotypingEngine {
 
     //convert a likelihood matrix of alleles x reads into a RealMatrix
     public static <EVIDENCE> RealMatrix getAsRealMatrix(final LikelihoodMatrix<EVIDENCE, Allele> matrix) {
-        final RealMatrix result = new Array2DRowRealMatrix(matrix.numberOfAlleles(), matrix.numberOfReads());
+        final RealMatrix result = new Array2DRowRealMatrix(matrix.numberOfAlleles(), matrix.evidenceCount());
         result.walkInOptimizedOrder(new DefaultRealMatrixChangingVisitor() {
             @Override
             public double visit(int row, int column, double value) {
@@ -327,14 +327,14 @@ public class SomaticGenotypingEngine {
     }
 
     private static <EVIDENCE extends Locatable> LikelihoodMatrix<EVIDENCE, Allele> combinedLikelihoodMatrix(final List<LikelihoodMatrix<EVIDENCE, Allele>> matrices, final AlleleList<Allele> alleleList) {
-        final List<EVIDENCE> reads = matrices.stream().flatMap(m -> m.reads().stream()).collect(Collectors.toList());
+        final List<EVIDENCE> reads = matrices.stream().flatMap(m -> m.evidence().stream()).collect(Collectors.toList());
         final AlleleLikelihoods<EVIDENCE, Allele> combinedLikelihoods = new AlleleLikelihoods<>(SampleList.singletonSampleList("COMBINED"), alleleList, ImmutableMap.of("COMBINED", reads));
 
         int combinedReadIndex = 0;
         final LikelihoodMatrix<EVIDENCE, Allele> result = combinedLikelihoods.sampleMatrix(0);
         final int alleleCount = result.numberOfAlleles();
         for (final LikelihoodMatrix<EVIDENCE, Allele> matrix : matrices) {
-            final int readCount = matrix.numberOfReads();
+            final int readCount = matrix.evidenceCount();
             for (int r = 0; r < readCount; r++) {
                 for (int a = 0; a < alleleCount; a++) {
                     result.set(a, combinedReadIndex, matrix.get(a, r));

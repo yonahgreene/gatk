@@ -82,13 +82,13 @@ public class ReadLikelihoods<A extends Allele> extends AlleleLikelihoods<GATKRea
         Utils.validateArg(!Double.isNaN(maximumErrorPerBase) && maximumErrorPerBase > 0.0, "the maximum error per base must be a positive number");
 
         new IndexRange(0, samples.numberOfSamples()).forEach(s -> {
-            final List<GATKRead> sampleReads = readsBySampleIndex.get(s);
+            final List<GATKRead> sampleReads = evidenceBySampleIndex.get(s);
             final List<GATKRead> readsToRemove = IntStream.range(0, sampleReads.size())
                     .filter(r -> readIsPoorlyModelled(s, r, sampleReads.get(r), maximumErrorPerBase))
                     .mapToObj(sampleReads::get)
                     .collect(Collectors.toList());
 
-            removeSampleReads(s, readsToRemove, alleles.numberOfAlleles());
+            removeSampleEvidence(s, readsToRemove, alleles.numberOfAlleles());
         });
     }
 
@@ -130,10 +130,10 @@ public class ReadLikelihoods<A extends Allele> extends AlleleLikelihoods<GATKRea
                 continue;
             }
             if (fraction >= 1.0) {
-                removeSampleReads(s, readsBySampleIndex.get(s), alleleCount);
+                removeSampleEvidence(s, evidenceBySampleIndex.get(s), alleleCount);
             } else {
-                final Map<A,List<GATKRead>> readsByBestAllelesMap = readsByBestAlleleMap(s);
-                removeSampleReads(s, AlleleBiasedDownsamplingUtils.selectAlleleBiasedReads(readsByBestAllelesMap, fraction),alleleCount);
+                final Map<A,List<GATKRead>> readsByBestAllelesMap = evidenceByBestAlleleMap(s);
+                removeSampleEvidence(s, AlleleBiasedDownsamplingUtils.selectAlleleBiasedReads(readsByBestAllelesMap, fraction),alleleCount);
             }
         }
     }
@@ -149,7 +149,7 @@ public class ReadLikelihoods<A extends Allele> extends AlleleLikelihoods<GATKRea
 
         for (int s = 0; s < sampleCount; s++) {
 
-            final Map<String, List<GATKRead>> readsByName = sampleReads(s).stream().collect(Collectors.groupingBy(GATKRead::getName));
+            final Map<String, List<GATKRead>> readsByName = sampleEvidence(s).stream().collect(Collectors.groupingBy(GATKRead::getName));
 
             final List<Fragment> sampleFragments = readsByName.values().stream().flatMap(fragmentReads -> {
                 if (fragmentReads.size() == 1) {
@@ -175,7 +175,7 @@ public class ReadLikelihoods<A extends Allele> extends AlleleLikelihoods<GATKRea
                 fragmentIndexBySampleIndex[s].put(sampleFragments.get(f), f);
                 for (int a = 0; a < alleleCount; a++) {
                     for (final GATKRead read : sampleFragments.get(f).getReads()) {
-                        final int oldReadIndex = readIndex(s, read);
+                        final int oldReadIndex = evidenceIndex(s, read);
                         newSampleValues[a][f] += oldSampleValues[a][oldReadIndex];
                     }
                 }
@@ -214,7 +214,7 @@ public class ReadLikelihoods<A extends Allele> extends AlleleLikelihoods<GATKRea
         final List<List<GATKRead>> newReadsBySampleIndex = new ArrayList<>(sampleCount);
 
         for (int s = 0; s < sampleCount; s++) {
-            newReadsBySampleIndex.add(new ArrayList<>(readsBySampleIndex.get(s)));
+            newReadsBySampleIndex.add(new ArrayList<>(evidenceBySampleIndex.get(s)));
             for (int a = 0; a < alleleCount; a++) {
                 newLikelihoodValues[s][a] = MathUtils.applyToArrayInPlace(valuesBySampleIndex[s][a].clone(), x -> x * conversionFactor);
             }
@@ -233,8 +233,8 @@ public class ReadLikelihoods<A extends Allele> extends AlleleLikelihoods<GATKRea
     }
 
     public ReadLikelihoods(final AlleleLikelihoods<GATKRead, A> alleleLikelihoods) {
-        this(alleleLikelihoods.alleles, alleleLikelihoods.samples, alleleLikelihoods.readsBySampleIndex,
-                alleleLikelihoods.readIndexBySampleIndex, alleleLikelihoods.valuesBySampleIndex);
+        this(alleleLikelihoods.alleles, alleleLikelihoods.samples, alleleLikelihoods.evidenceBySampleIndex,
+                alleleLikelihoods.evidenceIndexBySampleIndex, alleleLikelihoods.valuesBySampleIndex);
     }
 
     @Override
