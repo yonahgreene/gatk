@@ -86,17 +86,17 @@ public class SomaticGenotypingEngine {
         }
 
         // if we're ignoring pairing, give 1st and 2nd of pair different names
-        if (MTAC.disregardReadPairing) {
+        if (MTAC.independentMates) {
             for (int s = 0; s < logReadLikelihoods.numberOfSamples(); s++) {
                 logReadLikelihoods.sampleEvidence(s).forEach(read -> read.setName(read.getName() + (read.isFirstOfPair() ? "1" : "2")));
             }
         }
 
         final AlleleLikelihoods<Fragment, Haplotype> logFragmentLikelihoods = logReadLikelihoods.combineMates();
-        final double logGlobalReadMismappingRate = MTAC.likelihoodArgs.phredScaledGlobalReadMismappingRate < 0 ? - Double.MAX_VALUE
-                : NaturalLogUtils.qualToLogErrorProb(MTAC.likelihoodArgs.phredScaledGlobalReadMismappingRate);
-        logFragmentLikelihoods.normalizeLikelihoods(logGlobalReadMismappingRate);
 
+        if (MTAC.likelihoodArgs.phredScaledGlobalReadMismappingRate > 0) {
+            logFragmentLikelihoods.normalizeLikelihoods(NaturalLogUtils.qualToLogErrorProb(MTAC.likelihoodArgs.phredScaledGlobalReadMismappingRate));
+        }
 
         for( final int loc : startPosKeySet ) {
             final List<VariantContext> eventsAtThisLoc = AssemblyBasedCallerUtils.getVariantContextsFromActiveHaplotypes(loc, haplotypes, false);
