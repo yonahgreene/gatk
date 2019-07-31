@@ -444,11 +444,6 @@ public class HaplotypeCallerIntegrationTest extends CommandLineProgramTest {
         innerTestBamoutProducesReasonablySizedOutput(bamOutput);
     }
 
-    @Test
-    public void testLocalBamout() {
-        innerTestBamoutProducesReasonablySizedOutput(new File("/tmp/local-bamout.bam").toPath());
-    }
-
     private void innerTestBamoutProducesReasonablySizedOutput(Path bamOutput) {
         Utils.resetRandomGenerator();
 

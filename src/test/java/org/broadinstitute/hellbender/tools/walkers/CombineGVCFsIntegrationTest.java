@@ -151,7 +151,7 @@ public class CombineGVCFsIntegrationTest extends CommandLineProgramTest {
         final VCFHeader header = getHeaderFromFile(expected);
 
         runCombineGVCFSandAssertSomething(inputs, expected, extraArgs, (a, e) -> {
-            VariantContextTestUtils.assertVariantContextsAreEqualAlleleOrderIndependent(a, e, attributesToIgnore, header);
+                VariantContextTestUtils.assertVariantContextsAreEqualAlleleOrderIndependent(a, e, attributesToIgnore, header);
         }, reference);
     }
 
